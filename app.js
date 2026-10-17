@@ -2,7 +2,7 @@
 (() => {
 'use strict';
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const STORE_KEY = 'nrtracker.v1';
 const UNDO_MAX = 50;
 const BASE_CLICKS = { corp: 3, runner: 4 };
@@ -87,15 +87,16 @@ function afterChange(prev) {
     }
   }
 }
-function doUndo() {
+function doUndo(flip = false) {
   const u = undo.pop();
-  if (!u) { toast('Nothing to undo'); return; }
-  const prev = state;
+  if (!u) { toast('Nothing to undo', '', 1700, flip); return; }
   state = u.s;
   save();
-  render(prev);
-  toast(`Undone: ${u.label}`);
+  render();
+  toast(`Undone: ${u.label}`, '', 1700, flip);
 }
+/** Face-to-face: the Corp half (and a Corp end-turn bar) is turned 180 degrees toward the Corp player. */
+function faceToFace() { return state.mode === 'both' && settings.faceToFace; }
 
 function sign(n) { return n > 0 ? `+${n}` : `${n}`; }
 function sideVisible(side) { return state.mode === 'both' || state.mode === side; }
@@ -117,7 +118,7 @@ function stepCounter(st, side, key, d) {
   s[key] = Math.max(0, Math.min(LIMIT[key], s[key] + d));
 }
 
-function endTurn() {
+function endTurn(flip = false) {
   if (state.mode === 'both') {
     const from = state.active, to = OTHER[from];
     commit(`End of ${SIDE_NAME[from]} turn`, (st) => {
@@ -128,7 +129,7 @@ function endTurn() {
       if (to === 'corp') st.turn = Math.min(999, st.turn + 1);
       st.active = to;
     });
-    toast(`${SIDE_NAME[to]} turn · ${BASE_CLICKS[to]} clicks`);
+    toast(`${SIDE_NAME[to]} turn · ${BASE_CLICKS[to]} clicks`, '', 1700, flip);
   } else {
     const side = state.mode;
     commit(`End of turn ${state.turn}`, (st) => {
@@ -306,8 +307,17 @@ function build() {
   builtKey = key;
   const sides = state.mode === 'both' ? ['corp', 'runner'] : [state.mode];
   board.className = `board ${state.mode === 'both' ? 'both' : 'single'}`;
+  const tb = $('topbar');
+  if (tb.parentNode === board) $('app').insertBefore(tb, $('app').firstChild); // keep it out of the rebuild
   board.innerHTML = sides.map(panel).join('');
-  if (state.mode === 'both' && settings.faceToFace) board.querySelector('[data-panel="corp"]').classList.add('flipped');
+  const app = $('app'), topbar = $('topbar');
+  const f2f = faceToFace();
+  app.classList.toggle('f2f', f2f);
+  if (f2f) {
+    board.querySelector('[data-panel="corp"]').classList.add('flipped');
+    board.insertBefore(topbar, board.querySelector('[data-panel="runner"]'));
+  }
+  $('corpBar').hidden = !f2f;
   board.querySelectorAll('.id-toggle').forEach((b) => {
     b.hidden = !settings.showId;
     guardedClick(b, () => {
@@ -388,19 +398,27 @@ function render() {
     st.innerHTML = `<span class="dot"></span><span>Tracking ${SIDE_NAME[state.mode]}</span>`;
   }
   // bottom bar
-  const endSide = both ? state.active : state.mode;
-  $('endBtn').className = `end-btn ${endSide}`;
-  $('endLabel').textContent = both ? `End ${SIDE_NAME[state.active]} turn` : 'End turn';
+  const f2f = faceToFace();
+  const endSide = f2f ? 'runner' : both ? state.active : state.mode;
+  const endIdle = f2f && state.active !== 'runner';
+  $('endBtn').className = `end-btn ${endSide}${endIdle ? ' idle' : ''}`;
+  $('endBtn').setAttribute('aria-disabled', String(endIdle));
+  $('endLabel').textContent = f2f ? 'End Runner turn' : both ? `End ${SIDE_NAME[state.active]} turn` : 'End turn';
   $('undoBtn').disabled = undo.length === 0;
   $('undoCount').textContent = undo.length;
+  const corpIdle = state.active !== 'corp';
+  $('corpEndBtn').className = `end-btn corp${corpIdle ? ' idle' : ''}`;
+  $('corpEndBtn').setAttribute('aria-disabled', String(corpIdle));
+  $('corpUndoBtn').disabled = undo.length === 0;
+  $('corpUndoCount').textContent = undo.length;
 }
 
 // --------------------------------------------------------------- toast
 let toastTimer = 0;
-function toast(msg, kind = '', ms = 1700) {
+function toast(msg, kind = '', ms = 1700, flip = false) {
   const t = $('toast');
   t.textContent = msg;
-  t.className = `toast show ${kind}`;
+  t.className = `toast show ${kind}${flip && faceToFace() ? ' flipped' : ''}`;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { t.className = 'toast'; }, ms);
 }
@@ -409,11 +427,12 @@ function toast(msg, kind = '', ms = 1700) {
 const overlay = $('overlay'), sheet = $('sheet');
 let sheetOpenedAt = 0, sheetHandlers = {}, sheetOnCancel = null, closeTimer = 0;
 
-function openSheet(html, handlers, { onCancel = null, kind = '' } = {}) {
+function openSheet(html, handlers, { onCancel = null, kind = '', flip = false } = {}) {
   cancelPress();
   clearTimeout(closeTimer);
   sheet.innerHTML = html;
   sheet.dataset.kind = kind;
+  overlay.classList.toggle('flipped', flip);
   sheetHandlers = handlers || {};
   sheetOnCancel = onCancel;
   sheetOpen = true;
@@ -495,7 +514,7 @@ function openHelp(first) {
   }
 }
 
-function openEndTurn() {
+function openEndTurn(flip = false) {
   const both = state.mode === 'both';
   const side = both ? state.active : state.mode;
   const next = both ? OTHER[side] : side;
@@ -508,7 +527,7 @@ function openEndTurn() {
     <p class="lead">${lead}</p>
     <div class="row"><button class="btn" data-act="cancel">Cancel</button>
     <button class="btn primary ${next}" data-act="confirm">${svg('i-next')}End turn</button></div>`,
-  { cancel: closeSheet, confirm: () => { closeSheet(); endTurn(); } }, { kind: 'endturn' });
+  { cancel: closeSheet, confirm: () => { closeSheet(); endTurn(flip); } }, { kind: 'endturn', flip });
 }
 
 function openNewGame() {
@@ -532,7 +551,7 @@ function openMenu() {
     <div class="section-label">Options</div>
     <div class="menu-list">
       <button class="menu-item" data-act="showId">${svg('i-id')}<span class="grow">ID ability toggle</span><span class="switch${settings.showId ? ' on' : ''}"></span></button>
-      ${state.mode === 'both' ? `<button class="menu-item" data-act="face">${svg('i-corp')}<span class="grow">Corp faces across the table<small style="display:block;font-size:13px;color:var(--muted);font-weight:500">Turns the Corp half upside down</small></span><span class="switch${settings.faceToFace ? ' on' : ''}"></span></button>` : ''}
+      ${state.mode === 'both' ? `<button class="menu-item" data-act="face">${svg('i-corp')}<span class="grow">Corp faces across the table<small style="display:block;font-size:13px;color:var(--muted);font-weight:500">Turns the Corp half and its own End turn button upside down</small></span><span class="switch${settings.faceToFace ? ' on' : ''}"></span></button>` : ''}
       <button class="menu-item" data-act="newgame">${svg('i-new')}<span class="grow">New game</span></button>
       <button class="menu-item" data-act="help">${svg('i-help')}<span class="grow">Help</span></button>
     </div>
@@ -573,8 +592,17 @@ function openRecSheet(side) {
 }
 
 // --------------------------------------------------------------- wiring
-guardedClick($('undoBtn'), doUndo);
-guardedClick($('endBtn'), openEndTurn);
+guardedClick($('undoBtn'), () => doUndo(false));
+guardedClick($('corpUndoBtn'), () => doUndo(true));
+// In face-to-face mode each End turn button ends only its own side's turn; the other one is idle.
+guardedClick($('endBtn'), () => {
+  if (faceToFace() && state.active !== 'runner') { toast('Corp turn now · the Corp ends it from their side'); return; }
+  openEndTurn(false);
+});
+guardedClick($('corpEndBtn'), () => {
+  if (state.active !== 'corp') { toast('Runner turn now · the Runner ends it from their side', '', 1700, true); return; }
+  openEndTurn(true);
+});
 guardedClick($('helpBtn'), () => openHelp(false));
 guardedClick($('menuBtn'), openMenu);
 

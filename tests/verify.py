@@ -50,7 +50,7 @@ with sync_playwright() as p:
     check('no undo history at start', U(pg) == 0)
 
     # ---- layout
-    sizes = pg.evaluate("""[...document.querySelectorAll('.step, .icon-btn, .undo-btn, .end-btn')].map(b=>{const r=b.getBoundingClientRect();return [r.width,r.height]})""")
+    sizes = pg.evaluate("""[...document.querySelectorAll('.step, .icon-btn, .undo-btn, .end-btn')].filter(b=>b.offsetParent).map(b=>{const r=b.getBoundingClientRect();return [r.width,r.height]})""")
     check('every +/- and bar button is at least 44x44', all(w >= 44 and h >= 44 for w, h in sizes), sizes[:4])
     idh = pg.evaluate("""(()=>{const b=document.querySelector('.id-toggle');const r=b.getBoundingClientRect();return r.height})()""")
     check('ID toggle visible (34pt pill + 46pt hit area)', idh >= 34, idh)
@@ -242,6 +242,85 @@ with sync_playwright() as p:
     check('mode switch can be undone', S(pg)['mode'] == 'corp')
     pg.reload(); pg.wait_for_timeout(700)
     check('mode survives reload', S(pg)['mode'] == 'corp' and pg.locator('.panel').count() == 1)
+
+    # ---- face-to-face: Corp half + its own End turn / Undo bar turned toward the Corp player
+    pg.evaluate("localStorage.clear()"); pg.reload(); pg.wait_for_timeout(700); tap('[data-act="start"]'); rest()
+    check('not flipped: no Corp bar, top bar at the top', pg.locator('#corpBar').is_hidden()
+          and pg.locator('#topbar').bounding_box()['y'] < pg.locator('.panel.corp').bounding_box()['y'])
+    tap('#menuBtn'); pg.wait_for_timeout(500); tap('#sheet [data-act="face"]', 1, 300); tap('#sheet [data-act="close"]'); rest()
+    def rot(sel): return pg.evaluate(f"getComputedStyle(document.querySelector('{sel}')).transform")
+    check('flipped: Corp panel rotated 180°', rot('.panel.corp').startswith('matrix(-1'), rot('.panel.corp'))
+    check('flipped: Corp bar visible and rotated 180°', pg.locator('#corpBar').is_visible() and rot('#corpBar').startswith('matrix(-1'), rot('#corpBar'))
+    cb = pg.locator('#corpBar').bounding_box(); cp = pg.locator('.panel.corp').bounding_box()
+    tb = pg.locator('#topbar').bounding_box(); rp = pg.locator('.panel.runner').bounding_box(); bb = pg.locator('.bottombar').bounding_box()
+    check('flipped order top to bottom: Corp bar, Corp panel, turn strip, Runner panel, Runner bar',
+          cb['y'] < cp['y'] < tb['y'] < rp['y'] < bb['y'] and cb['y'] < 20, (cb, cp, tb, rp, bb))
+    check('flipped: Corp bar has End Corp turn + Undo', pg.inner_text('#corpEndBtn') .strip() == 'End Corp turn' and pg.locator('#corpUndoBtn').is_visible())
+    check('flipped: Corp turn -> Corp End turn highlighted, Runner End turn idle',
+          'idle' not in pg.get_attribute('#corpEndBtn', 'class') and 'idle' in pg.get_attribute('#endBtn', 'class') and pg.inner_text('#endLabel') == 'End Runner turn')
+    sizes = pg.evaluate("""[...document.querySelectorAll('.step, .icon-btn, .undo-btn, .end-btn')].filter(b=>b.offsetParent).map(b=>{const r=b.getBoundingClientRect();return Math.min(r.width,r.height)})""")
+    check('flipped: every +/- and bar button still at least 44pt', min(sizes) >= 44, min(sizes))
+    for sa in [(0, 0), (47, 34), (59, 34)]:
+        pg.evaluate(f"document.documentElement.style.setProperty('--safe-t','{sa[0]}px');document.documentElement.style.setProperty('--safe-b','{sa[1]}px')"); pg.wait_for_timeout(100)
+        fit = pg.evaluate("(()=>{const b=document.getElementById('board');return [b.scrollHeight,b.clientHeight]})()")
+        check(f'flipped layout fits 390x844 with safe areas {sa}', fit[0] <= fit[1] + 1, fit)
+    pg.evaluate("document.documentElement.style.setProperty('--safe-t','47px');document.documentElement.style.setProperty('--safe-b','34px')"); pg.wait_for_timeout(100)
+    pg.screenshot(path='screenshots/face-to-face.png')
+    # Runner's End turn is idle on the Corp turn
+    before = S(pg); tap('#endBtn'); pg.wait_for_timeout(400)
+    check('flipped: idle Runner End turn does nothing on the Corp turn', not sheet_open(pg) and S(pg) == before)
+    pg.wait_for_timeout(1800)
+    # Corp ends from its own bar; sheet opens upside down at the physical top
+    tap('#corpEndBtn'); pg.wait_for_timeout(500)
+    sh = pg.locator('#sheet').bounding_box()
+    check('Corp End turn opens the confirm upside down at the top', sheet_open(pg) and pg.evaluate("document.getElementById('overlay').classList.contains('flipped')")
+          and sh['y'] < 5 and sh['height'] < 400 and rot('#overlay').startswith('matrix(-1'), (sh, rot('#overlay')))
+    pg.screenshot(path='screenshots/face-to-face-corp-confirm.png')
+    x, y = center(pg, '#sheet [data-act="confirm"]')
+    over = pg.evaluate(f"(()=>{{const o=document.getElementById('overlay');o.style.pointerEvents='none';const e=document.elementFromPoint({x},{y});o.style.pointerEvents='';return e&&e.closest('button')?e.closest('button').id||e.closest('button').className:''}})()")
+    check('(setup) flipped confirm sits over the Corp bar', over in ('corpEndBtn', 'corpUndoBtn'), over)
+    u0 = U(pg); touch(x, y); pg.wait_for_timeout(30); touch(x, y); pg.wait_for_timeout(300)
+    st = S(pg)
+    check('leak: flipped confirm + fast second tap ends exactly one Corp turn, nothing underneath fires',
+          st['active'] == 'runner' and st['runner']['clicks'] == 4 and U(pg) == u0 + 1 and not sheet_open(pg), (st['active'], U(pg), u0))
+    check('Corp toast is upside down near the top', 'flipped' in pg.get_attribute('#toast', 'class'))
+    pg.wait_for_timeout(500)
+    check('flipped: Runner turn -> Runner End turn highlighted, Corp End turn idle',
+          'idle' in pg.get_attribute('#corpEndBtn', 'class') and 'idle' not in pg.get_attribute('#endBtn', 'class'))
+    before = S(pg); tap('#corpEndBtn'); pg.wait_for_timeout(400)
+    check('flipped: idle Corp End turn does nothing on the Runner turn', not sheet_open(pg) and S(pg) == before)
+    pg.wait_for_timeout(1800)
+    # Runner confirm is the right way up
+    tap('#endBtn'); pg.wait_for_timeout(500)
+    check('Runner End turn opens the confirm the right way up at the bottom', sheet_open(pg) and not pg.evaluate("document.getElementById('overlay').classList.contains('flipped')")
+          and pg.locator('#sheet').bounding_box()['y'] > 400)
+    tap('#sheet [data-act="cancel"]'); rest()
+    # Corp cancel over Corp Undo
+    tap(step('runner', 'credits', 1)); pg.wait_for_timeout(100)
+    tap('#endBtn'); pg.wait_for_timeout(500); tap('#sheet [data-act="confirm"]'); rest()   # back to Corp turn
+    tap('#corpEndBtn'); pg.wait_for_timeout(500)
+    before = S(pg); u0 = U(pg); x, y = center(pg, '#sheet [data-act="cancel"]')
+    touch(x, y); pg.wait_for_timeout(30); touch(x, y); pg.wait_for_timeout(300)
+    check('leak: flipped Cancel + fast second tap does not hit Corp Undo underneath', S(pg) == before and U(pg) == u0 and not sheet_open(pg))
+    pg.wait_for_timeout(500)
+    x, y = center(pg, '#corpEndBtn'); before = S(pg)
+    touch(x, y); pg.wait_for_timeout(60); touch(x, y); pg.wait_for_timeout(300)
+    check('leak: double tap on Corp End turn opens the confirm but does not confirm it', sheet_open(pg) and S(pg) == before)
+    tap('#sheet [data-act="cancel"]'); rest()
+    # Corp undo
+    tap(step('corp', 'credits', 1), 2); u0 = U(pg); c0 = S(pg)['corp']['credits']
+    tap('#corpUndoBtn'); pg.wait_for_timeout(150)
+    check('Corp Undo undoes (shared history) and its count matches', S(pg)['corp']['credits'] == c0 - 1 and U(pg) == u0 - 1
+          and pg.inner_text('#corpUndoCount') == pg.inner_text('#undoCount') == str(u0 - 1))
+    check('Corp counters work while flipped', S(pg)['corp']['credits'] == 6)
+    pg.reload(); pg.wait_for_timeout(700)
+    check('face-to-face survives reload', pg.locator('#corpBar').is_visible() and rot('.panel.corp').startswith('matrix(-1'))
+    tap('#menuBtn'); pg.wait_for_timeout(500); tap('#sheet [data-act="face"]', 1, 300); tap('#sheet [data-act="close"]'); rest()
+    check('turning it off restores the normal layout', pg.locator('#corpBar').is_hidden() and rot('.panel.corp') == 'none'
+          and pg.locator('#topbar').bounding_box()['y'] < pg.locator('.panel.corp').bounding_box()['y']
+          and pg.inner_text('#endLabel') == 'End Corp turn' and 'idle' not in pg.get_attribute('#endBtn', 'class'))
+    pg.evaluate("document.documentElement.style.removeProperty('--safe-t');document.documentElement.style.removeProperty('--safe-b')")
+    tap('#menuBtn'); pg.wait_for_timeout(500); tap('#sheet .choice[data-mode="corp"]', 1, 300); tap('#sheet [data-act="close"]'); rest()
 
     # ---- options
     tap('#menuBtn'); pg.wait_for_timeout(500); tap('#sheet [data-act="showId"]', 1, 300); tap('#sheet [data-act="close"]'); rest()

@@ -41,5 +41,16 @@ with sync_playwright() as p:
     pg.click('[data-act="setmode"][data-mode="corp"]'); pg.wait_for_timeout(200)
     pg.click('[data-act="close"]'); pg.wait_for_timeout(2200)
     pg.screenshot(path=OUT+'corp-only.png')
+    # face-to-face (Corp half flipped) with simulated iPhone safe areas
+    pg.click('#menuBtn'); pg.wait_for_timeout(500)
+    pg.click('[data-act="setmode"][data-mode="both"]'); pg.wait_for_timeout(200)
+    pg.click('[data-act="face"]'); pg.wait_for_timeout(200)
+    pg.click('[data-act="close"]'); pg.wait_for_timeout(700)
+    if pg.evaluate('window.__nrt.state.active') == 'runner':
+        pg.click('#endBtn'); pg.wait_for_timeout(600); pg.click('[data-act="confirm"]'); pg.wait_for_timeout(700)
+    pg.evaluate("document.documentElement.style.setProperty('--safe-t','47px');document.documentElement.style.setProperty('--safe-b','34px')")
+    pg.wait_for_timeout(2200); pg.screenshot(path=OUT+'face-to-face.png')
+    pg.click('#corpEndBtn'); pg.wait_for_timeout(600); pg.screenshot(path=OUT+'face-to-face-corp-confirm.png')
+    pg.click('[data-act="confirm"]'); pg.wait_for_timeout(2200); pg.screenshot(path=OUT+'face-to-face-runner-turn.png')
     print('ok')
     b.close()

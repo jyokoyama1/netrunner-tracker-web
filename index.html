@@ -45,7 +45,7 @@
 </svg>
 
 <div id="app" class="app">
-  <header class="topbar">
+  <header class="topbar" id="topbar">
     <div class="turn" aria-live="polite">
       <span class="turn-label">Turn</span>
       <span class="turn-num" id="turnNum">1</span>
@@ -54,6 +54,14 @@
     <button class="icon-btn" id="helpBtn" aria-label="Help"><svg><use href="#i-help"/></svg></button>
     <button class="icon-btn" id="menuBtn" aria-label="Menu"><svg><use href="#i-menu"/></svg></button>
   </header>
+  <div class="corpbar" id="corpBar" hidden>
+    <button class="undo-btn" id="corpUndoBtn" aria-label="Undo (Corp side)">
+      <svg><use href="#i-undo"/></svg><span>Undo</span><span class="undo-count" id="corpUndoCount">0</span>
+    </button>
+    <button class="end-btn corp" id="corpEndBtn">
+      <span>End Corp turn</span><svg><use href="#i-next"/></svg>
+    </button>
+  </div>
   <main id="board" class="board"></main>
   <footer class="bottombar">
     <button class="undo-btn" id="undoBtn" aria-label="Undo">

@@ -48,11 +48,12 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 /* ---------- layout ---------- */
 .app {
   position: absolute; inset: 0;
-  display: grid; grid-template-rows: auto 1fr auto;
+  display: grid; grid-template-rows: auto auto 1fr auto;
+  grid-template-areas: "top" "corp" "board" "bottom";
   padding: calc(var(--safe-t) + 6px) calc(var(--safe-r) + 12px) calc(var(--safe-b) + 10px) calc(var(--safe-l) + 12px);
   max-width: 560px; margin: 0 auto;
 }
-.topbar { display: flex; align-items: center; gap: 8px; height: 48px; }
+.topbar { grid-area: top; display: flex; align-items: center; gap: 8px; height: 48px; }
 .turn {
   display: flex; align-items: baseline; gap: 6px;
   padding: 6px 14px 6px 14px; border-radius: 999px;
@@ -224,7 +225,9 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .board.single .id-toggle svg { width: 20px; height: 20px; }
 
 /* ---------- bottom bar ---------- */
-.bottombar { display: grid; grid-template-columns: 1fr 1.45fr; gap: 10px; padding-top: 2px; }
+.board { grid-area: board; }
+.bottombar { grid-area: bottom; }
+.bottombar, .corpbar { display: grid; grid-template-columns: 1fr 1.45fr; gap: 10px; padding-top: 2px; }
 .undo-btn, .end-btn {
   height: 54px; border-radius: 18px; display: flex; align-items: center; justify-content: center; gap: 9px;
   font-size: 17px; font-weight: 700;
@@ -350,3 +353,34 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------- face-to-face (Corp half turned toward the far player) ---------- */
+.corpbar { grid-area: corp; transform: rotate(180deg); padding-top: 6px; padding-bottom: 0; }
+.app.f2f .board { padding: 4px 0; gap: 6px; }
+.app.f2f .board .topbar { flex: none; height: 44px; padding: 0 2px; }
+.end-btn.idle {
+  color: var(--faint); background: var(--surface); border: 1px solid var(--tile-border); box-shadow: none;
+}
+.end-btn.idle:active { transform: none; }
+/* the confirm sheet opens upside down (from the physical top) when the Corp taps */
+.overlay.flipped { transform: rotate(180deg); }
+.overlay.flipped .sheet { padding-bottom: calc(var(--safe-t) + 18px); max-height: calc(100% - var(--safe-b) - 24px); }
+.toast.flipped { bottom: auto; top: calc(var(--safe-t) + 74px); transform: translate(-50%, -12px) rotate(180deg); }
+.toast.flipped.show { transform: translate(-50%, 0) rotate(180deg); }
+/* face-to-face needs one more bar and the mid strip: tighten everything a little (targets stay 44pt) */
+.app.f2f .undo-btn, .app.f2f .end-btn { height: 48px; border-radius: 16px; font-size: 16px; }
+.app.f2f .panel { gap: 5px; padding: 6px; }
+.app.f2f .panel-head { min-height: 30px; }
+.app.f2f .side-name { font-size: 18px; }
+.app.f2f .id-toggle { height: 30px; font-size: 12.5px; }
+.app.f2f .id-toggle::after { inset: -8px -2px; }
+.app.f2f .hero, .app.f2f .minor { gap: 5px; }
+.app.f2f .tile { padding: 4px 5px 4px; gap: 1px; border-radius: 14px; }
+.app.f2f .tile-label { font-size: 12px; line-height: 15px; }
+.app.f2f .tile-label svg { width: 14px; height: 14px; }
+.app.f2f .hero .value { font-size: 36px; }
+.app.f2f .value { font-size: 30px; }
+.app.f2f .value .sub { font-size: 10.5px; }
+.app.f2f .board .topbar { height: 44px; }
+.app.f2f .turn { padding: 4px 12px; }
+.app.f2f .turn-num { font-size: 20px; }

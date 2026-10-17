@@ -1,5 +1,5 @@
 /* Offline cache. Bump CACHE when shipping changes; pages update on the next launch. */
-const CACHE = 'nrt-1.0.0';
+const CACHE = 'nrt-1.1.0';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './manifest.webmanifest',
   './icons/favicon.svg', './icons/apple-touch-icon.png', './icons/icon-192.png',

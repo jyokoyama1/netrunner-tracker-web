@@ -21,21 +21,33 @@ Replaces Android: Netrunner tokens. A fresh web app (not a port of the GBA look)
 - Hold + or − to repeat (after 0.42 s, faster after ~1.3 s); a whole hold is one undo step.
 - Recurring credits: + adds one (and raises the refill amount if it goes past it, i.e. a new card); − spends one.
   Tap the number to open an editor with "Available now" and "Refill each turn" steppers.
-- Menu: tracking mode, "ID ability toggle" on/off, "Corp faces across the table" (rotates the Corp panel 180° for face-to-face play,
-  both-sides mode only), New game, Help. Help (?) button in the top bar; the help shows by itself on first launch (with the mode picker).
+- Menu: tracking mode, "ID ability toggle" on/off, "Corp faces across the table" (face-to-face, both-sides mode only, see below), New game, Help. Help (?) button in the top bar; the help shows by itself on first launch (with the mode picker).
 - Limits: credits 0–999, clicks 0–9 (pips grow past the base for extra clicks), others 0–99, recurring 0–20. A change that hits a limit adds no undo step.
+
+## Face-to-face mode (v1.1, Oct 17 2026, Jeffery's request)
+- Physical top to bottom: Corp bar (End Corp turn + Undo, rotated 180°) · Corp panel (rotated 180°) · turn strip (Turn n, whose turn, ?, menu) ·
+  Runner panel · Runner bar (Undo + End Runner turn). The top bar moves into the middle so both players can reach it.
+- Each End turn button ends only its own side's turn. The active side's is lit (accent gradient), the other is greyed out ("idle");
+  tapping an idle one shows a short note and does nothing. Corp Undo shares the one undo history with the Runner Undo.
+- The End turn confirm opens oriented for whoever tapped: from the Corp bar the whole sheet is rotated 180° and slides in from the
+  physical top (padded for the top safe area); toasts from Corp-bar actions are flipped and shown near the top too.
+- Slightly tighter tiles and 48pt bars in this mode so it fits 390x844 with safe areas (tested 0/0, 47/34, 59/34); every target stays ≥44pt.
+- Not flipped: layout is the same as v1.0.
+- Implementation: `.app.f2f`, `#corpBar`, `#topbar` moved into `#board` between the panels (moved back out before every board rebuild),
+  `.overlay.flipped`, `.toast.flipped`, `.end-btn.idle`.
 
 ## Tap-leak rule (the GBA bug, solved for touch)
 - Dialogs are bottom sheets over a full-screen backdrop that swallows pointer events; actions fire on `click`.
 - A counter only reacts to a press whose pointerdown started on that button while no dialog was open and outside the lockout.
 - Closing any dialog locks the main screen for 450 ms, and the overlay keeps catching taps while it fades out.
 - Sheet buttons ignore taps in the first 250 ms after opening, so a double tap on End turn opens the confirm but can't confirm it.
-- Verified: backdrop tap/hold over a + button, confirm tap/hold, Cancel over Undo, double tap on End turn, New game confirm (see tests).
+- Verified: backdrop tap/hold over a + button, confirm tap/hold, Cancel over Undo, double tap on End turn, New game confirm,
+  and in face-to-face: flipped confirm over the Corp bar, flipped Cancel over Corp Undo, double tap on Corp End turn (see tests).
 
 ## Files
 `index.html` (markup + inline SVG icon sprite), `styles.css`, `app.js` (all logic), `sw.js` (offline cache), `manifest.webmanifest`,
 `icons/` (apple-touch-icon 180, 192, 512, maskable 512, favicon.svg; PNGs rendered from the SVG with headless Chrome),
-`tests/verify.py` (88 Playwright checks), `tests/shots.py` (screenshots into `screenshots/`).
+`tests/verify.py` (112 Playwright checks), `tests/shots.py` (screenshots into `screenshots/`).
 No build step, no dependencies, no external fonts (system font: SF Pro on iPhone).
 
 ## Saving
