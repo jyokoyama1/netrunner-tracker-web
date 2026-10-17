@@ -14,7 +14,9 @@ def S(pg): return pg.evaluate('window.__nrt.state')
 def U(pg): return pg.evaluate('window.__nrt.undoCount')
 def sheet_open(pg): return pg.evaluate("!document.getElementById('overlay').hidden && document.getElementById('overlay').classList.contains('open')")
 def center(pg, sel):
-    b = pg.locator(sel).first.bounding_box(); return b['x'] + b['width'] / 2, b['y'] + b['height'] / 2
+    loc = pg.locator(sel).first
+    if loc.evaluate("e => !!e.closest('.sheet')"): loc.scroll_into_view_if_needed(); pg.wait_for_timeout(50)
+    b = loc.bounding_box(); return b['x'] + b['width'] / 2, b['y'] + b['height'] / 2
 
 def new_ctx(b):
     return b.new_context(viewport={'width': 390, 'height': 844}, device_scale_factor=2, is_mobile=True, has_touch=True)
@@ -62,7 +64,7 @@ with sync_playwright() as p:
     check('both-sides layout fits with iPhone safe areas (47 top / 34 bottom)', fit[0] <= fit[1] + 1, fit)
     pg.evaluate("document.documentElement.style.removeProperty('--safe-t');document.documentElement.style.removeProperty('--safe-b')")
     labels = pg.locator('.tile-label span').all_inner_texts()
-    check('plain-word labels', set(['Clicks', 'Credits', 'Agenda points', 'Bad publicity', 'Tags', 'Brain damage', 'Recurring credits']) <= set(labels), labels)
+    check('plain-word labels', set(['Clicks', 'Credits', 'Agenda points', 'Bad publicity', 'Tags', 'Core damage', 'Recurring credits']) <= set(labels), labels)
 
     # ---- counters
     tap(step('corp', 'credits', 1), 3); tap(step('corp', 'credits', -1))
@@ -321,6 +323,67 @@ with sync_playwright() as p:
           and pg.inner_text('#endLabel') == 'End Corp turn' and 'idle' not in pg.get_attribute('#endBtn', 'class'))
     pg.evaluate("document.documentElement.style.removeProperty('--safe-t');document.documentElement.style.removeProperty('--safe-b')")
     tap('#menuBtn'); pg.wait_for_timeout(500); tap('#sheet .choice[data-mode="corp"]', 1, 300); tap('#sheet [data-act="close"]'); rest()
+
+    # ---- NSG icons, faction marks, damage name
+    pg.evaluate("localStorage.clear()"); pg.reload(); pg.wait_for_timeout(700); tap('[data-act="start"]'); rest()
+    assets = pg.evaluate("""Promise.all(['NSG_CLICK.svg','NSG_CLICK_SPENT.svg','NSG_CREDIT.svg','NSG_AGENDA.svg','NSG_BAD_PUBLICITY.svg','NSG_TAG.svg','NSG_CORE_DAMAGE.svg','NSG_RECURRING_CREDIT.svg',
+      'factions/NSG_HB.png','factions/NSG_JINTEKI.png','factions/NSG_NBN.svg','factions/NSG_WEYLAND.svg','factions/NSG_ANARCH.svg','factions/NSG_CRIMINAL.svg','factions/NSG_SHAPER.svg','factions/NSG_ADAM.svg','factions/NSG_APEX.svg','factions/NSG_SUNNY.svg']
+      .map(f=>fetch('assets/nsg/'+f).then(r=>r.ok)))""")
+    check('all 18 NSG assets are served', all(assets), assets)
+    masks = pg.evaluate("""['agenda','bad','rec'].map(k=>getComputedStyle(document.querySelector('[data-tile="corp-'+k+'"] .ico')).webkitMaskImage||getComputedStyle(document.querySelector('[data-tile="corp-'+k+'"] .ico')).maskImage)""")
+    check('counter labels use the NSG symbols as masks', all('assets/nsg/NSG_' in m for m in masks), masks)
+    pm = pg.evaluate("""[...document.querySelectorAll('.panel.corp .pip i')].map(i=>{const s=getComputedStyle(i);return (s.webkitMaskImage||s.maskImage)})""")
+    check('click pips are NSG click symbols (3 available)', len(pm) == 3 and all('NSG_CLICK.svg' in m for m in pm), pm)
+    tap(step('corp', 'clicks', -1)); pg.wait_for_timeout(100)
+    pm = pg.evaluate("""[...document.querySelectorAll('.panel.corp .pip i')].map(i=>{const s=getComputedStyle(i);return (s.webkitMaskImage||s.maskImage)})""")
+    check('a spent click shows the crossed-out spent symbol', sum('NSG_CLICK_SPENT' in m for m in pm) == 1, pm)
+    check('credits show the NSG credit glyph by the number', pg.locator('[data-tile="corp-credits"] .value .cr-glyph').count() == 1)
+    ico_col = pg.evaluate("[getComputedStyle(document.querySelector('[data-tile=\"corp-agenda\"] .ico')).backgroundColor, getComputedStyle(document.querySelector('[data-tile=\"runner-agenda\"] .ico')).backgroundColor]")
+    check('icons tinted with each side colour', ico_col[0] != ico_col[1] and 'rgb(47, 208, 255)' in ico_col[0], ico_col)
+    # damage name
+    check('damage counter defaults to Core damage', 'Core damage' in pg.inner_text('[data-tile="runner-brain"] .tile-label'))
+    tap(step('runner', 'brain', 1)); pg.wait_for_timeout(100)
+    tap('#menuBtn'); pg.wait_for_timeout(500)
+    check('menu has the damage name setting, Core damage selected', pg.locator('#sheet .seg-btn.on[data-v="core"]').count() == 1)
+    tap('#sheet .seg-btn[data-v="brain"]', 1, 300)
+    check('choosing Brain damage updates the menu', pg.locator('#sheet .seg-btn.on[data-v="brain"]').count() == 1)
+    tap('#sheet [data-act="close"]'); rest()
+    check('tile label now says Brain damage', 'Brain damage' in pg.inner_text('[data-tile="runner-brain"] .tile-label'))
+    check('step buttons say brain damage', 'brain damage' in pg.get_attribute(step('runner', 'brain', 1), 'aria-label'))
+    tap('#undoBtn'); pg.wait_for_timeout(100)
+    check('undo message uses the chosen name (change was made as core damage)', 'Runner brain damage +1' in pg.inner_text('#toast'), pg.inner_text('#toast'))
+    tap('#helpBtn'); pg.wait_for_timeout(500)
+    ht = pg.inner_text('#sheet')
+    check('help text uses the chosen name', 'brain damage' in ht and 'Rename it to Core damage' in ht, ht[:300])
+    check('help credits Null Signal Games (CC BY-ND 4.0)', 'Null Signal Games' in ht and 'CC BY-ND 4.0' in ht)
+    tap('#sheet [data-act="close"]'); rest()
+    pg.reload(); pg.wait_for_timeout(700)
+    check('damage name survives reload', 'Brain damage' in pg.inner_text('[data-tile="runner-brain"] .tile-label')
+          and pg.evaluate("JSON.parse(localStorage.getItem('nrtracker.v1')).settings.damage") == 'brain')
+    tap(step('runner', 'brain', 1)); pg.wait_for_timeout(50)
+    tap('#menuBtn'); pg.wait_for_timeout(500); tap('#sheet .seg-btn[data-v="core"]', 1, 300); tap('#sheet [data-act="close"]'); rest()
+    tap('#undoBtn'); pg.wait_for_timeout(100)
+    check('switch back: label and undo message say core damage', 'Core damage' in pg.inner_text('[data-tile="runner-brain"] .tile-label') and 'core damage' in pg.inner_text('#toast'), pg.inner_text('#toast'))
+    pg.wait_for_timeout(400)
+    # factions
+    check('no faction by default: plain side icons', pg.locator('.panel.corp .side-name svg').count() == 1 and pg.locator('.panel .side-mark').count() == 0)
+    tap('#menuBtn'); pg.wait_for_timeout(500); tap('#sheet [data-act="faction"][data-side="corp"]', 1, 400)
+    check('Corp faction picker lists None + 4 Corp factions', pg.locator('#sheet .faction-opt').count() == 5)
+    tap('#sheet .faction-opt[data-id="hb"]', 1, 400)
+    check('picking returns to the menu showing Haas-Bioroid', pg.locator('#sheet[data-kind="menu"]').count() == 1 and 'Haas-Bioroid' in pg.inner_text('#sheet'))
+    tap('#sheet [data-act="faction"][data-side="runner"]', 1, 400)
+    check('Runner faction picker lists None + 6 Runner factions', pg.locator('#sheet .faction-opt').count() == 7)
+    tap('#sheet .faction-opt[data-id="apex"]', 1, 400); tap('#sheet [data-act="close"]'); rest()
+    ok_img = pg.evaluate("(()=>{const i=document.querySelector('.panel.corp img.side-mark');return !!i && i.complete && i.naturalWidth>0})()")
+    check('Corp header shows the HB glyph', ok_img)
+    check('Runner header shows the Apex glyph tinted (mask)', pg.locator('.panel.runner .side-mark.masked').count() == 1)
+    pg.reload(); pg.wait_for_timeout(700)
+    check('factions survive reload', pg.locator('.panel.corp img.side-mark').count() == 1 and pg.locator('.panel.runner .side-mark.masked').count() == 1)
+    fit = pg.evaluate("(()=>{const b=document.getElementById('board');return b.scrollHeight<=b.clientHeight+1})()")
+    check('layout with faction marks still fits', fit)
+    tap('#menuBtn'); pg.wait_for_timeout(500); tap('#sheet [data-act="faction"][data-side="runner"]', 1, 400); tap('#sheet .faction-opt[data-id=""]', 1, 400)
+    tap('#sheet [data-act="close"]'); rest()
+    check('faction can be cleared back to the plain icon', pg.locator('.panel.runner .side-name svg').count() == 1)
 
     # ---- options
     tap('#menuBtn'); pg.wait_for_timeout(500); tap('#sheet [data-act="showId"]', 1, 300); tap('#sheet [data-act="close"]'); rest()

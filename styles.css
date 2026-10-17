@@ -177,17 +177,29 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 @keyframes bumpUp { 0% { transform: translateY(6px) scale(.92); opacity: .5; } 100% { transform: none; opacity: 1; } }
 @keyframes bumpDown { 0% { transform: translateY(-6px) scale(.92); opacity: .5; } 100% { transform: none; opacity: 1; } }
 
-/* click pips */
-.pips { display: flex; justify-content: center; align-items: center; gap: 5px; }
-.pip {
-  width: 11px; height: 11px; border-radius: 50%;
-  border: 2px solid rgba(var(--accent-rgb), .45);
-  transition: background .25s var(--ease), border-color .25s, transform .25s var(--ease), box-shadow .25s;
+/* click pips: the NSG click symbol, bright = available, crossed-out "spent" symbol = used */
+.pips { display: flex; justify-content: center; align-items: center; gap: 2px; }
+.pip { position: relative; width: 19px; height: 19px; flex: none; transition: transform .25s var(--ease); }
+.pip i {
+  position: absolute; inset: 0; display: block;
+  background: rgba(var(--accent-rgb), .42);
+  -webkit-mask: url(assets/nsg/NSG_CLICK_SPENT.svg) center / contain no-repeat;
+  mask: url(assets/nsg/NSG_CLICK_SPENT.svg) center / contain no-repeat;
+  transition: background .25s var(--ease), filter .25s;
 }
-.pip.on { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 10px rgba(var(--accent-rgb), .55); }
-.pip.extra { border-style: dashed; }
-.pips.many { gap: 3px; }
-.pips.many .pip { width: 8px; height: 8px; border-width: 1.5px; }
+.pip:not(.on) i { transform: scale(1.3); } /* the spent symbol is drawn smaller in its artwork */
+.pip.on i {
+  background: var(--accent);
+  -webkit-mask-image: url(assets/nsg/NSG_CLICK.svg); mask-image: url(assets/nsg/NSG_CLICK.svg);
+  filter: drop-shadow(0 0 4px rgba(var(--accent-rgb), .8));
+}
+.pip.on { animation: pipOn .3s var(--ease); }
+@keyframes pipOn { 0% { transform: scale(.6); } 100% { transform: none; } }
+.pip.extra i { background: rgba(255,255,255,.35); }
+.pip.extra.on i { background: #fff; filter: drop-shadow(0 0 4px rgba(var(--accent-rgb), .9)); }
+.pips.many { gap: 1px; }
+.pips.many .pip { width: 14px; height: 14px; }
+.panel.waiting .pip.on i { filter: none; }
 
 /* agenda win */
 .tile.won { border-color: rgba(255,209,102,.55); background: rgba(255,209,102,.08); }
@@ -206,10 +218,6 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .board.single .hero .step { width: 64px; height: 64px; border-radius: 18px; }
 .board.single .hero .step svg { width: 28px; height: 28px; }
 .board.single .hero .value { font-size: 80px; }
-.board.single .pip { width: 16px; height: 16px; border-width: 2.5px; }
-.board.single .pips { gap: 7px; }
-.board.single .pips.many { gap: 5px; }
-.board.single .pips.many .pip { width: 12px; height: 12px; border-width: 2px; }
 .board.single .minor { grid-template-columns: 1fr; grid-auto-rows: auto; gap: 8px; flex: none; }
 .board.single .minor .tile { flex-direction: row; align-items: center; padding: 8px 8px 8px 8px; border-radius: 18px; min-height: 68px; }
 .board.single .minor .tile-label { flex: 1; font-size: 16px; color: var(--text); font-weight: 600; }
@@ -384,3 +392,69 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .app.f2f .board .topbar { height: 44px; }
 .app.f2f .turn { padding: 4px 12px; }
 .app.f2f .turn-num { font-size: 20px; }
+
+/* ---------- NSG game symbols (CSS masks tinted with the side colour) ---------- */
+.ico {
+  display: inline-block; flex: none; width: 18px; height: 18px; background: currentColor;
+  -webkit-mask: var(--m) center / contain no-repeat; mask: var(--m) center / contain no-repeat;
+}
+.ico-clicks { --m: url(assets/nsg/NSG_CLICK.svg); }
+.ico-credits { --m: url(assets/nsg/NSG_CREDIT.svg); }
+.ico-agenda { --m: url(assets/nsg/NSG_AGENDA.svg); }
+.ico-bad { --m: url(assets/nsg/NSG_BAD_PUBLICITY.svg); }
+.ico-tags { --m: url(assets/nsg/NSG_TAG.svg); }
+.ico-damage { --m: url(assets/nsg/NSG_CORE_DAMAGE.svg); }
+.ico-rec { --m: url(assets/nsg/NSG_RECURRING_CREDIT.svg); }
+.tile-label .ico { width: 19px; height: 19px; color: var(--accent); margin: -2px 0; }
+.ico-bad, .ico-tags, .ico-damage { transform: scale(1.3); } /* these symbols have more padding in their artwork */
+.tile.won .tile-label .ico { color: var(--win); }
+.help-list .hi .ico { width: 22px; height: 22px; }
+.credits-value { flex-direction: row; gap: 3px; }
+.cr-glyph { width: .42em; height: .62em; color: var(--accent); opacity: .95; filter: drop-shadow(0 0 6px rgba(var(--accent-rgb), .45)); }
+
+/* faction marks */
+.side-mark { width: 26px; height: 26px; object-fit: contain; flex: none; display: block; }
+.side-mark.masked, .menu-mark.masked, .fg.masked { background: var(--accent, var(--runner)); -webkit-mask-size: contain; mask-size: contain; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; -webkit-mask-position: center; mask-position: center; }
+.board.single .side-mark { width: 32px; height: 32px; }
+.app.f2f .side-mark { width: 24px; height: 24px; }
+.menu-item .fm { width: 28px; height: 28px; display: grid; place-items: center; flex: none; }
+.menu-mark { width: 28px; height: 28px; object-fit: contain; display: block; }
+.menu-item.corp .fm svg { color: var(--corp); }
+.menu-item.runner .fm svg { color: var(--runner); }
+.menu-item.runner .menu-mark.masked { background: var(--runner); }
+.menu-item .chev { color: var(--faint); font-size: 22px; line-height: 1; }
+.menu-ico { width: 22px; height: 22px; color: var(--runner); }
+.seg-item { min-height: 40px; background: none; padding-bottom: 0; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 4px; border-radius: 16px; background: rgba(255,255,255,.05); }
+.seg-btn { height: 46px; border-radius: 12px; font-size: 15px; font-weight: 650; color: var(--muted); transition: background .15s, color .15s; }
+.seg-btn.on { background: rgba(255,61,120,.2); color: var(--text); box-shadow: inset 0 0 0 1.5px rgba(255,61,120,.6); }
+.faction-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.faction-opt {
+  display: flex; align-items: center; gap: 12px; min-height: 62px; padding: 8px 12px; border-radius: 16px; text-align: left;
+  background: rgba(255,255,255,.05); border: 1.5px solid rgba(255,255,255,.07); font-size: 15px; font-weight: 650;
+}
+.faction-opt.selected { border-color: rgba(255,255,255,.6); background: rgba(255,255,255,.1); }
+.faction-opt .fg { width: 40px; height: 40px; object-fit: contain; flex: none; display: grid; place-items: center; }
+.faction-opt .fg.plain.corp { color: var(--corp); }
+.faction-opt .fg.plain.runner { color: var(--runner); }
+.faction-opt .fg.masked.runner { background: var(--runner); }
+.faction-opt .fg svg { width: 26px; height: 26px; }
+.credit { margin: 14px 2px 0; font-size: 11.5px; line-height: 1.45; color: var(--faint); text-align: center; }
+.credit a { color: var(--muted); }
+
+/* sizes per layout */
+.board.single .pip { width: 28px; height: 28px; }
+.board.single .pips { gap: 5px; }
+.board.single .pips.many .pip { width: 20px; height: 20px; }
+.board.single .tile-label .ico { width: 20px; height: 20px; }
+.board.single .minor .value { width: 54px; }
+.app.f2f .pip { width: 17px; height: 17px; }
+.app.f2f .pips.many .pip { width: 12px; height: 12px; }
+.app.f2f .tile-label .ico { width: 16px; height: 16px; }
+
+/* welcome: keep Start visible at the bottom of the sheet while the help scrolls */
+.sticky-row {
+  position: sticky; bottom: calc(-1 * (var(--safe-b) + 18px)); z-index: 2;
+  margin: 12px -20px calc(-1 * (var(--safe-b) + 18px)); padding: 14px 20px calc(var(--safe-b) + 18px);
+  background: linear-gradient(180deg, rgba(18,21,29,0), #12151d 26%);
+}

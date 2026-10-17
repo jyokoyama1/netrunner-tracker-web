@@ -36,6 +36,22 @@ Replaces Android: Netrunner tokens. A fresh web app (not a port of the GBA look)
 - Implementation: `.app.f2f`, `#corpBar`, `#topbar` moved into `#board` between the panels (moved back out before every board rebuild),
   `.overlay.flipped`, `.toast.flipped`, `.end-btn.idle`.
 
+## Icons: Null Signal Games assets (v1.2, Oct 17 2026, from Jeffery's zip "NSG Visual Assets v1.5")
+License CC BY-ND 4.0: attribution required (in Help, Menu, README, `assets/nsg/ATTRIBUTION.md`), recolouring OK, no remixing.
+So the SVGs are copied unmodified and tinted at display time with CSS masks (`.ico-*`, `.pip i`); HB and Jinteki embed rasters
+(3.9 MB / 343 KB) and were rendered to 120 px PNGs (12-15 KB). All 18 files are in the service-worker cache (~100 KB total).
+- NSG_CLICK → click pips (available) + help icon; NSG_CLICK_SPENT → spent click pips.
+- NSG_CREDIT → glyph next to the big credits number. NSG_AGENDA, NSG_BAD_PUBLICITY, NSG_TAG, NSG_CORE_DAMAGE, NSG_RECURRING_CREDIT → counter labels.
+- Faction glyphs → optional "Corp faction" / "Runner faction" in the Menu (picker sheet; default None = plain built-in icon), shown next to
+  the side name. Apex is black artwork → mask in Runner colour; the others keep their own colours.
+- Kept inline SVG: ID ability, plus/minus, undo, end turn, help, menu, new game, share, trophy, plain Corp/Runner marks.
+- Not used: 5 credits, advancement counters, Archives/HQ/R&D, interrupt, link, MU, rez cost, subroutine, trash, virus, generic counters
+  (not tracked), set symbols (not relevant), NSG_CLICK_BLUE (fixed blue; we tint NSG_CLICK instead), NSG_BAD_PUBLICITY_SPENT (no spent state).
+
+## Runner damage name (v1.2)
+Menu → "Runner damage name": Core damage (default, newer name) / Brain damage. Saved in `settings.damage`. The stored counter key stays
+`brain`. Tile label, button labels, help text and undo messages all use the chosen name (stored undo labels are rewritten when shown).
+
 ## Tap-leak rule (the GBA bug, solved for touch)
 - Dialogs are bottom sheets over a full-screen backdrop that swallows pointer events; actions fire on `click`.
 - A counter only reacts to a press whose pointerdown started on that button while no dialog was open and outside the lockout.
@@ -47,11 +63,11 @@ Replaces Android: Netrunner tokens. A fresh web app (not a port of the GBA look)
 ## Files
 `index.html` (markup + inline SVG icon sprite), `styles.css`, `app.js` (all logic), `sw.js` (offline cache), `manifest.webmanifest`,
 `icons/` (apple-touch-icon 180, 192, 512, maskable 512, favicon.svg; PNGs rendered from the SVG with headless Chrome),
-`tests/verify.py` (112 Playwright checks), `tests/shots.py` (screenshots into `screenshots/`).
+`tests/verify.py` (137 Playwright checks), `tests/shots.py` (screenshots into `screenshots/`).
 No build step, no dependencies, no external fonts (system font: SF Pro on iPhone).
 
 ## Saving
-localStorage key `nrtracker.v1`: `{v, state, undo:[{s,label}], settings:{showId, faceToFace}, helpSeen}`. Written after every change.
+localStorage key `nrtracker.v1`: `{v, state, undo:[{s,label}], settings:{showId, faceToFace, damage, faction:{corp, runner}}, helpSeen}`. Written after every change.
 Bad/corrupt data → fresh game + welcome. Note: iOS keeps home-screen web app storage separate from Safari tabs.
 
 ## PWA details

@@ -1,9 +1,18 @@
 /* Offline cache. Bump CACHE when shipping changes; pages update on the next launch. */
-const CACHE = 'nrt-1.1.0';
+const CACHE = 'nrt-1.2.0';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './manifest.webmanifest',
   './icons/favicon.svg', './icons/apple-touch-icon.png', './icons/icon-192.png',
   './icons/icon-512.png', './icons/icon-maskable-512.png',
+  // Null Signal Games symbols + faction glyphs (CC BY-ND 4.0)
+  './assets/nsg/NSG_CLICK.svg', './assets/nsg/NSG_CLICK_SPENT.svg', './assets/nsg/NSG_CREDIT.svg',
+  './assets/nsg/NSG_AGENDA.svg', './assets/nsg/NSG_BAD_PUBLICITY.svg', './assets/nsg/NSG_TAG.svg',
+  './assets/nsg/NSG_CORE_DAMAGE.svg', './assets/nsg/NSG_RECURRING_CREDIT.svg',
+  './assets/nsg/factions/NSG_HB.png', './assets/nsg/factions/NSG_JINTEKI.png',
+  './assets/nsg/factions/NSG_NBN.svg', './assets/nsg/factions/NSG_WEYLAND.svg',
+  './assets/nsg/factions/NSG_ANARCH.svg', './assets/nsg/factions/NSG_CRIMINAL.svg',
+  './assets/nsg/factions/NSG_SHAPER.svg', './assets/nsg/factions/NSG_ADAM.svg',
+  './assets/nsg/factions/NSG_APEX.svg', './assets/nsg/factions/NSG_SUNNY.svg',
 ];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));

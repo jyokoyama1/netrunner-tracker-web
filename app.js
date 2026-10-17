@@ -2,7 +2,7 @@
 (() => {
 'use strict';
 
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 const STORE_KEY = 'nrtracker.v1';
 const UNDO_MAX = 50;
 const BASE_CLICKS = { corp: 3, runner: 4 };
@@ -10,14 +10,45 @@ const SIDE_NAME = { corp: 'Corp', runner: 'Runner' };
 const OTHER = { corp: 'runner', runner: 'corp' };
 const WIN_AT = 7;
 const LIMIT = { clicks: 9, credits: 999, agenda: 99, bad: 99, tags: 99, brain: 99, rec: 20, recMax: 20 };
+// The Runner's damage counter is stored as `brain`; its name follows the Menu setting (Core damage is the newer name).
+const dmgName = () => (settings.damage === 'brain' ? 'Brain damage' : 'Core damage');
 const LABEL = {
   clicks: 'Clicks', credits: 'Credits', agenda: 'Agenda points', bad: 'Bad publicity',
-  tags: 'Tags', brain: 'Brain damage', rec: 'Recurring credits', recMax: 'Recurring refill',
+  tags: 'Tags', get brain() { return dmgName(); }, rec: 'Recurring credits', recMax: 'Recurring refill',
 };
 const LOWER = { clicks: 'clicks', credits: 'credits', agenda: 'agenda points', bad: 'bad publicity',
-  tags: 'tags', brain: 'brain damage', rec: 'recurring credits', recMax: 'recurring refill' };
-const ICON = { clicks: 'i-clicks', credits: 'i-credits', agenda: 'i-agenda', bad: 'i-bad',
-  tags: 'i-tags', brain: 'i-brain', rec: 'i-rec' };
+  tags: 'tags', get brain() { return dmgName().toLowerCase(); }, rec: 'recurring credits', recMax: 'recurring refill' };
+/** Use the chosen damage name in any stored text (undo labels are saved with the name at the time). */
+const withDmgName = (text) => text.replace(/\b(brain|core) damage/gi, (m) => (m[0] === m[0].toUpperCase() ? dmgName() : dmgName().toLowerCase()));
+// Game symbols by Null Signal Games (CC BY-ND 4.0), used as CSS masks tinted in the side's colour.
+const ICON = { clicks: 'clicks', credits: 'credits', agenda: 'agenda', bad: 'bad',
+  tags: 'tags', brain: 'damage', rec: 'rec' };
+const ico = (name, extra = '') => `<span class="ico ico-${name} ${extra}" aria-hidden="true"></span>`;
+// Faction glyphs by Null Signal Games (CC BY-ND 4.0). `mask: true` = black artwork, shown tinted.
+const FACTIONS = {
+  corp: [
+    { id: 'hb', name: 'Haas-Bioroid', src: 'assets/nsg/factions/NSG_HB.png' },
+    { id: 'jinteki', name: 'Jinteki', src: 'assets/nsg/factions/NSG_JINTEKI.png' },
+    { id: 'nbn', name: 'NBN', src: 'assets/nsg/factions/NSG_NBN.svg' },
+    { id: 'weyland', name: 'Weyland Consortium', src: 'assets/nsg/factions/NSG_WEYLAND.svg' },
+  ],
+  runner: [
+    { id: 'anarch', name: 'Anarch', src: 'assets/nsg/factions/NSG_ANARCH.svg' },
+    { id: 'criminal', name: 'Criminal', src: 'assets/nsg/factions/NSG_CRIMINAL.svg' },
+    { id: 'shaper', name: 'Shaper', src: 'assets/nsg/factions/NSG_SHAPER.svg' },
+    { id: 'adam', name: 'Adam', src: 'assets/nsg/factions/NSG_ADAM.svg' },
+    { id: 'apex', name: 'Apex', src: 'assets/nsg/factions/NSG_APEX.svg', mask: true },
+    { id: 'sunny', name: 'Sunny Lebeau', src: 'assets/nsg/factions/NSG_SUNNY.svg' },
+  ],
+};
+const factionOf = (side) => FACTIONS[side].find((f) => f.id === (settings.faction || {})[side]) || null;
+function sideMark(side, cls = 'side-mark') {
+  const f = factionOf(side);
+  if (!f) return svg(side === 'corp' ? 'i-corp' : 'i-runner');
+  if (f.mask) return `<span class="${cls} masked" style="-webkit-mask-image:url(${f.src});mask-image:url(${f.src})" aria-hidden="true"></span>`;
+  return `<img class="${cls}" src="${f.src}" alt="" draggable="false">`;
+}
+const NSG_CREDIT = 'Game symbols and faction glyphs by <a href="https://nullsignal.games/" target="_blank" rel="noopener">Null Signal Games</a>, used under <a href="https://creativecommons.org/licenses/by-nd/4.0/" target="_blank" rel="noopener">CC BY-ND 4.0</a> (recoloured in the app).';
 const MINOR = { corp: ['agenda', 'bad', 'rec'], runner: ['agenda', 'tags', 'brain', 'rec'] };
 
 // ---------------------------------------------------------------- state
@@ -38,7 +69,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 let state = newGame('both');
 let undo = [];               // [{ s: previousState, label }]
-let settings = { showId: true, faceToFace: false };
+let settings = { showId: true, faceToFace: false, damage: 'core', faction: { corp: '', runner: '' } };
 let helpSeen = false;
 
 function validState(s) {
@@ -55,6 +86,8 @@ function load() {
     state = d.state;
     undo = Array.isArray(d.undo) ? d.undo.filter((u) => u && validState(u.s)).slice(-UNDO_MAX) : [];
     settings = Object.assign(settings, d.settings || {});
+    settings.faction = Object.assign({ corp: '', runner: '' }, settings.faction || {});
+    if (settings.damage !== 'brain') settings.damage = 'core';
     helpSeen = !!d.helpSeen;
   } catch (e) { /* corrupt save: start fresh */ }
 }
@@ -93,7 +126,7 @@ function doUndo(flip = false) {
   state = u.s;
   save();
   render();
-  toast(`Undone: ${u.label}`, '', 1700, flip);
+  toast(`Undone: ${withDmgName(u.label)}`, '', 1700, flip);
 }
 /** Face-to-face: the Corp half (and a Corp end-turn bar) is turned 180 degrees toward the Corp player. */
 function faceToFace() { return state.mode === 'both' && settings.faceToFace; }
@@ -280,18 +313,20 @@ function tile(side, key, extraClass = '') {
   } else if (key === 'rec') {
     inner = `<button class="value value-btn" data-edit-rec="${side}" aria-label="Set ${SIDE_NAME[side]} recurring credits"><span class="num" data-num="${side}-rec">0</span><span class="sub" data-sub="${side}-rec"></span></button>`;
   } else {
-    inner = `<div class="value"><span class="num" data-num="${side}-${key}">0</span></div>`;
+    inner = key === 'credits'
+      ? `<div class="value credits-value">${ico('credits', 'cr-glyph')}<span class="num" data-num="${side}-credits">0</span></div>`
+      : `<div class="value"><span class="num" data-num="${side}-${key}">0</span></div>`;
   }
   const hint = key === 'clicks' ? `<div class="pips" data-pips="${side}" aria-hidden="true"></div>` : '';
   return `<div class="tile ${extraClass}" data-tile="${side}-${key}">
-    <div class="tile-label">${svg(ICON[key])}<span>${LABEL[key]}</span>${hint}</div>
+    <div class="tile-label">${key === 'clicks' || key === 'credits' ? '' : ico(ICON[key])}<span>${LABEL[key]}</span>${hint}</div>
     <div class="stepper">${minus}${inner}${plus}</div></div>`;
 }
 function panel(side) {
   const minor = MINOR[side].map((k, i, arr) => tile(side, k, arr.length % 2 && i === arr.length - 1 ? 'wide' : '')).join('');
   return `<section class="panel ${side}" data-panel="${side}" aria-label="${SIDE_NAME[side]}">
     <div class="panel-head">
-      <div class="side-name">${svg(side === 'corp' ? 'i-corp' : 'i-runner')}<span>${SIDE_NAME[side]}</span></div>
+      <div class="side-name" title="${factionOf(side) ? factionOf(side).name : ''}">${sideMark(side)}<span>${SIDE_NAME[side]}</span></div>
       <span class="live-dot" aria-hidden="true"></span>
       <span class="spacer"></span>
       <button class="id-toggle" data-id="${side}" aria-pressed="false">${svg('i-id')}<span>ID ability</span><span class="id-state"></span></button>
@@ -302,7 +337,7 @@ function panel(side) {
 }
 
 function build() {
-  const key = `${state.mode}|${settings.faceToFace}|${settings.showId}`;
+  const key = `${state.mode}|${settings.faceToFace}|${settings.showId}|${settings.damage}|${JSON.stringify(settings.faction)}`;
   if (key === builtKey) return false;
   builtKey = key;
   const sides = state.mode === 'both' ? ['corp', 'runner'] : [state.mode];
@@ -359,7 +394,7 @@ function render() {
     const total = Math.max(base, s.clicks);
     const pips = pn.querySelector(`[data-pips="${side}"]`);
     if (pips.children.length !== total) {
-      pips.innerHTML = Array.from({ length: total }, (_, i) => `<span class="pip${i >= base ? ' extra' : ''}"></span>`).join('');
+      pips.innerHTML = Array.from({ length: total }, (_, i) => `<span class="pip${i >= base ? ' extra' : ''}"><i></i></span>`).join('');
     }
     pips.classList.toggle('many', total > 5);
     [...pips.children].forEach((p, i) => p.classList.toggle('on', i < s.clicks));
@@ -479,13 +514,14 @@ function modeChoices(selected, act = 'mode') {
       <span class="ci">${svg(ic)}</span><span>${t}<small>${s}</small></span><span class="check"></span></button>`).join('')}</div>`;
 }
 
-function helpBody() {
+function helpBody(short = false) {
   return `<ul class="help-list">
     <li><span class="hi">${svg('i-plus')}</span><span>Tap <b>plus</b> or <b>minus</b> to change a counter. Hold to change it fast.</span></li>
-    <li><span class="hi">${svg('i-clicks')}</span><span><b>Clicks</b> show as dots. Bright dots are clicks you still have.</span></li>
+    <li><span class="hi">${ico('clicks')}</span><span><b>Clicks</b> show as click symbols. Bright ones are clicks you still have; spent ones are crossed out.</span></li>
+    ${short ? '' : `<li><span class="hi r">${ico('damage')}</span><span>The Corp tracks <b>bad publicity</b>; the Runner tracks <b>tags</b> and <b>${dmgName().toLowerCase()}</b>. Rename it to ${settings.damage === 'brain' ? 'Core damage' : 'Brain damage'} in the Menu.</span></li>`}
     <li><span class="hi r">${svg('i-next')}</span><span><b>End turn</b> gives the next turn its clicks (Corp 3, Runner 4), refills recurring credits and makes ID abilities ready again.</span></li>
     <li><span class="hi">${svg('i-undo')}</span><span><b>Undo</b> steps back through your last ${UNDO_MAX} changes, even after closing the app.</span></li>
-    <li><span class="hi r">${svg('i-rec')}</span><span>Tap a <b>recurring credits</b> number to set how many refill each turn.</span></li>
+    ${short ? '' : `<li><span class="hi r">${ico('rec')}</span><span>Tap a <b>recurring credits</b> number to set how many refill each turn.</span></li>`}
     <li><span class="hi">${svg('i-share')}</span><span>In Safari, tap <b>Share</b> then <b>Add to Home Screen</b> for a full-screen app that works offline.</span></li>
   </ul>`;
 }
@@ -494,10 +530,11 @@ function openHelp(first) {
     let pick = 'both';
     const html = () => `<h2>Netrunner Tracker</h2>
       <p class="lead">Your tokens, on your phone. Everything saves as you go.</p>
-      ${helpBody()}
+      ${helpBody(true)}
       <div class="section-label">What are you tracking?</div>
       ${modeChoices(pick)}
-      <div class="row"><button class="btn primary neutral" data-act="start">Start game</button></div>`;
+      <p class="credit">${NSG_CREDIT}</p>
+      <div class="row sticky-row"><button class="btn primary neutral" data-act="start">Start game</button></div>`;
     const handlers = {
       mode: (el) => { pick = el.dataset.mode; sheet.querySelectorAll('.choice').forEach((c) => c.classList.toggle('selected', c.dataset.mode === pick)); },
       start: () => {
@@ -509,7 +546,8 @@ function openHelp(first) {
     openSheet(html(), handlers, { onCancel: false, kind: 'welcome' });
   } else {
     openSheet(`<h2>How it works</h2>${helpBody()}
-      <div class="row"><button class="btn primary neutral" data-act="close">Got it</button></div>`,
+      <div class="row"><button class="btn primary neutral" data-act="close">Got it</button></div>
+      <p class="credit">${NSG_CREDIT}</p>`,
       { close: closeSheet }, { kind: 'help' });
   }
 }
@@ -552,20 +590,45 @@ function openMenu() {
     <div class="menu-list">
       <button class="menu-item" data-act="showId">${svg('i-id')}<span class="grow">ID ability toggle</span><span class="switch${settings.showId ? ' on' : ''}"></span></button>
       ${state.mode === 'both' ? `<button class="menu-item" data-act="face">${svg('i-corp')}<span class="grow">Corp faces across the table<small style="display:block;font-size:13px;color:var(--muted);font-weight:500">Turns the Corp half and its own End turn button upside down</small></span><span class="switch${settings.faceToFace ? ' on' : ''}"></span></button>` : ''}
+      ${['corp', 'runner'].filter((sd) => state.mode === 'both' || state.mode === sd).map((sd) => `<button class="menu-item faction-item ${sd}" data-act="faction" data-side="${sd}">
+        <span class="fm">${sideMark(sd, 'menu-mark')}</span><span class="grow">${SIDE_NAME[sd]} faction<small style="display:block;font-size:13px;color:var(--muted);font-weight:500">${factionOf(sd) ? factionOf(sd).name : 'None (plain icon)'}</small></span><span class="chev">›</span></button>`).join('')}
+      <div class="menu-item seg-item">${ico('damage', 'menu-ico')}<span class="grow">Runner damage name</span></div>
+      <div class="seg" role="radiogroup" aria-label="Runner damage name">
+        <button class="seg-btn${settings.damage !== 'brain' ? ' on' : ''}" role="radio" aria-checked="${settings.damage !== 'brain'}" data-act="damage" data-v="core">Core damage</button>
+        <button class="seg-btn${settings.damage === 'brain' ? ' on' : ''}" role="radio" aria-checked="${settings.damage === 'brain'}" data-act="damage" data-v="brain">Brain damage</button>
+      </div>
       <button class="menu-item" data-act="newgame">${svg('i-new')}<span class="grow">New game</span></button>
       <button class="menu-item" data-act="help">${svg('i-help')}<span class="grow">Help</span></button>
     </div>
     <div class="row"><button class="btn primary neutral" data-act="close">Done</button></div>
-    <div class="version">Netrunner Tracker ${VERSION}</div>`;
+    <div class="version">Netrunner Tracker ${VERSION}</div>
+    <p class="credit">${NSG_CREDIT}</p>`;
   const refresh = () => { const top = sheet.scrollTop; sheet.innerHTML = html(); sheet.scrollTop = top; };
   openSheet(html(), {
     setmode: (el) => { setMode(el.dataset.mode); refresh(); },
     showId: () => { settings.showId = !settings.showId; save(); render(); refresh(); },
     face: () => { settings.faceToFace = !settings.faceToFace; save(); render(); refresh(); },
+    damage: (el) => { settings.damage = el.dataset.v === 'brain' ? 'brain' : 'core'; save(); render(); refresh(); },
+    faction: (el) => openFaction(el.dataset.side),
     newgame: () => openNewGame(),
     help: () => openHelp(false),
     close: closeSheet,
   }, { kind: 'menu' });
+}
+
+function openFaction(side) {
+  const cur = (settings.faction || {})[side] || '';
+  const opts = [{ id: '', name: 'None', sub: 'Plain icon' }, ...FACTIONS[side]];
+  openSheet(`<h2>${SIDE_NAME[side]} faction</h2>
+    <p class="lead">Shows the faction glyph next to "${SIDE_NAME[side]}".</p>
+    <div class="faction-grid">${opts.map((f) => {
+      const mark = f.id ? (f.mask ? `<span class="fg masked ${side}" style="-webkit-mask-image:url(${f.src});mask-image:url(${f.src})"></span>` : `<img class="fg" src="${f.src}" alt="">`) : `<span class="fg plain ${side}">${svg(side === 'corp' ? 'i-corp' : 'i-runner')}</span>`;
+      return `<button class="faction-opt${f.id === cur ? ' selected' : ''}" data-act="pick" data-id="${f.id}">${mark}<span>${f.name}</span></button>`;
+    }).join('')}</div>
+    <div class="row"><button class="btn" data-act="back">Back</button></div>`, {
+    pick: (el) => { settings.faction = Object.assign({}, settings.faction, { [side]: el.dataset.id }); save(); render(); openMenu(); },
+    back: () => openMenu(),
+  }, { kind: 'faction' });
 }
 
 function openRecSheet(side) {
