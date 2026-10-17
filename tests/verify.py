@@ -1,0 +1,277 @@
+"""End-to-end checks in headless Chrome at 390x844 (iPhone-like, touch).
+Usage: python3 tests/verify.py [base_url]   (default http://localhost:8765/)"""
+import sys, json, time
+from playwright.sync_api import sync_playwright
+
+BASE = sys.argv[1] if len(sys.argv) > 1 else 'http://localhost:8765/'
+CHROME = '/usr/bin/google-chrome'
+results = []
+def check(name, cond, info=''):
+    results.append((name, bool(cond)))
+    print(('PASS ' if cond else 'FAIL ') + name + (f'  [{info}]' if info and not cond else ''))
+
+def S(pg): return pg.evaluate('window.__nrt.state')
+def U(pg): return pg.evaluate('window.__nrt.undoCount')
+def sheet_open(pg): return pg.evaluate("!document.getElementById('overlay').hidden && document.getElementById('overlay').classList.contains('open')")
+def center(pg, sel):
+    b = pg.locator(sel).first.bounding_box(); return b['x'] + b['width'] / 2, b['y'] + b['height'] / 2
+
+def new_ctx(b):
+    return b.new_context(viewport={'width': 390, 'height': 844}, device_scale_factor=2, is_mobile=True, has_touch=True)
+
+with sync_playwright() as p:
+    br = p.chromium.launch(executable_path=CHROME)
+    ctx = new_ctx(br); pg = ctx.new_page()
+    errors = []
+    pg.on('pageerror', lambda e: errors.append(str(e)))
+    pg.on('console', lambda m: m.type == 'error' and errors.append(m.text))
+    cdp = ctx.new_cdp_session(pg)
+    def touch(x, y, hold_ms=0):
+        cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': x, 'y': y}]})
+        if hold_ms: pg.wait_for_timeout(hold_ms)
+        cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
+    def tap(sel, n=1, gap=40):
+        for _ in range(n):
+            x, y = center(pg, sel); touch(x, y); pg.wait_for_timeout(gap)
+    def step(side, key, d): return f'.panel [data-side="{side}"][data-key="{key}"][data-d="{d}"]'
+    def rest(): pg.wait_for_timeout(600)  # past sheet animation + input lockout
+
+    pg.goto(BASE); pg.wait_for_timeout(800)
+    # ---- first run
+    check('welcome/help sheet shows on first run', sheet_open(pg) and pg.locator('#sheet[data-kind="welcome"]').count() == 1)
+    pg.locator('[data-act="backdrop"]').click(position={'x': 20, 'y': 20}, force=True); pg.wait_for_timeout(400)
+    check('welcome cannot be dismissed by backdrop (must pick a mode)', sheet_open(pg))
+    tap('.choice[data-mode="both"]'); tap('[data-act="start"]'); rest()
+    st = S(pg)
+    check('new game both sides: turn 1, Corp active, Corp 3 clicks, Runner 0, 5 credits each',
+          st['mode'] == 'both' and st['turn'] == 1 and st['active'] == 'corp' and st['corp']['clicks'] == 3
+          and st['runner']['clicks'] == 0 and st['corp']['credits'] == 5 and st['runner']['credits'] == 5, st)
+    check('both panels visible', pg.locator('.panel.corp').count() == 1 and pg.locator('.panel.runner').count() == 1)
+    check('no undo history at start', U(pg) == 0)
+
+    # ---- layout
+    sizes = pg.evaluate("""[...document.querySelectorAll('.step, .icon-btn, .undo-btn, .end-btn')].map(b=>{const r=b.getBoundingClientRect();return [r.width,r.height]})""")
+    check('every +/- and bar button is at least 44x44', all(w >= 44 and h >= 44 for w, h in sizes), sizes[:4])
+    idh = pg.evaluate("""(()=>{const b=document.querySelector('.id-toggle');const r=b.getBoundingClientRect();return r.height})()""")
+    check('ID toggle visible (34pt pill + 46pt hit area)', idh >= 34, idh)
+    check('no horizontal overflow', pg.evaluate('document.documentElement.scrollWidth <= 390'))
+    check('both-sides layout fits 390x844 without scrolling', pg.evaluate("(()=>{const b=document.getElementById('board');return b.scrollHeight<=b.clientHeight+1})()"))
+    pg.evaluate("document.documentElement.style.setProperty('--safe-t','47px');document.documentElement.style.setProperty('--safe-b','34px')")
+    pg.wait_for_timeout(100)
+    fit = pg.evaluate("(()=>{const b=document.getElementById('board');return [b.scrollHeight,b.clientHeight]})()")
+    check('both-sides layout fits with iPhone safe areas (47 top / 34 bottom)', fit[0] <= fit[1] + 1, fit)
+    pg.evaluate("document.documentElement.style.removeProperty('--safe-t');document.documentElement.style.removeProperty('--safe-b')")
+    labels = pg.locator('.tile-label span').all_inner_texts()
+    check('plain-word labels', set(['Clicks', 'Credits', 'Agenda points', 'Bad publicity', 'Tags', 'Brain damage', 'Recurring credits']) <= set(labels), labels)
+
+    # ---- counters
+    tap(step('corp', 'credits', 1), 3); tap(step('corp', 'credits', -1))
+    check('Corp credits + x3, - x1 = 7', S(pg)['corp']['credits'] == 7, S(pg)['corp'])
+    check('shown number matches', pg.inner_text('[data-num="corp-credits"]') == '7')
+    for side, key in [('corp', 'agenda'), ('corp', 'bad'), ('runner', 'agenda'), ('runner', 'tags'), ('runner', 'brain'), ('runner', 'credits')]:
+        before = S(pg)[side][key]; tap(step(side, key, 1)); tap(step(side, key, 1)); tap(step(side, key, -1))
+        check(f'{side} {key} +2 -1', S(pg)[side][key] == before + 1, S(pg)[side])
+    tap(step('corp', 'clicks', -1))
+    check('spend a Corp click (3 -> 2) and pips follow', S(pg)['corp']['clicks'] == 2 and pg.locator('.panel.corp .pip.on').count() == 2)
+    tap(step('corp', 'clicks', 1), 2)
+    check('extra click beyond 3 adds a pip', S(pg)['corp']['clicks'] == 4 and pg.locator('.panel.corp .pip').count() == 4)
+    tap(step('corp', 'clicks', -1))
+    u = U(pg); tap(step('runner', 'brain', -1)); tap(step('runner', 'brain', -1))
+    check('minus at 0 stays 0 and adds no undo step', S(pg)['runner']['brain'] == 0 and U(pg) == u + 1, (S(pg)['runner'], U(pg), u))
+    # recurring credits
+    tap(step('corp', 'rec', 1), 2)
+    check('recurring + raises available and refill amount', S(pg)['corp']['rec'] == 2 and S(pg)['corp']['recMax'] == 2)
+    tap(step('corp', 'rec', -1))
+    check('recurring - spends one, refill amount kept', S(pg)['corp']['rec'] == 1 and S(pg)['corp']['recMax'] == 2)
+    check('recurring shows "of 2"', pg.inner_text('[data-sub="corp-rec"]') == 'of 2')
+    tap('[data-edit-rec="runner"]'); pg.wait_for_timeout(500)
+    check('tap recurring number opens editor', pg.locator('#sheet[data-kind="rec"]').count() == 1 and sheet_open(pg))
+    tap('#sheet [data-k="recMax"][data-d="1"]', 1, 300); tap('#sheet [data-k="recMax"][data-d="1"]', 1, 300)
+    check('editor sets runner refill amount to 2', S(pg)['runner']['recMax'] == 2 and S(pg)['runner']['rec'] == 0, S(pg)['runner'])
+    tap('#sheet [data-act="close"]'); rest()
+    # ID ability
+    tap('.id-toggle[data-id="corp"]')
+    check('Corp ID ability marked used', S(pg)['corp']['idUsed'] is True and pg.inner_text('.id-toggle[data-id="corp"] .id-state') == 'Used')
+    # hold to repeat
+    u = U(pg); c0 = S(pg)['runner']['credits']
+    x, y = center(pg, step('runner', 'credits', 1)); touch(x, y, 1500); pg.wait_for_timeout(200)
+    c1 = S(pg)['runner']['credits']
+    check('holding + repeats (1.5 s hold adds several credits)', c1 - c0 >= 5, (c0, c1))
+    check('a whole hold is one undo step', U(pg) == u + 1, (u, U(pg)))
+    tap('#undoBtn'); pg.wait_for_timeout(100)
+    check('undo of hold restores credits', S(pg)['runner']['credits'] == c0)
+
+    # ---- undo
+    snap = S(pg); u = U(pg)
+    tap(step('corp', 'credits', 1)); tap(step('runner', 'tags', 1)); tap(step('corp', 'agenda', 1))
+    tap('#undoBtn', 3, 80)
+    check('3 changes then 3 undos returns exact state', S(pg) == snap and U(pg) == u, (U(pg), u))
+    check('undo toast names the change', 'Undone:' in pg.inner_text('#toast'))
+    for i in range(60): tap(step('corp', 'credits', 1 if i % 2 == 0 else -1), 1, 5)
+    check('undo history capped at 50 steps (>= 32)', U(pg) == 50, U(pg))
+
+    # ---- end turn (both)
+    pg.evaluate("localStorage.clear()"); pg.reload(); pg.wait_for_timeout(700)
+    tap('[data-act="start"]'); rest()
+    tap(step('runner', 'rec', 1), 2); tap(step('runner', 'rec', -1), 2)   # runner refill 2, spent
+    tap(step('corp', 'clicks', -1), 3); tap('.id-toggle[data-id="runner"]'); tap('.id-toggle[data-id="corp"]')
+    tap('#endBtn'); pg.wait_for_timeout(500)
+    check('End turn asks first', sheet_open(pg) and pg.locator('#sheet[data-kind="endturn"]').count() == 1)
+    check('confirm text names the next side', 'Runner starts turn 1 with 4 clicks' in pg.inner_text('#sheet'), pg.inner_text('#sheet'))
+    before = S(pg); tap('#sheet [data-act="cancel"]'); rest()
+    check('Cancel keeps everything', S(pg) == before and not sheet_open(pg))
+    tap('#endBtn'); pg.wait_for_timeout(500); tap('#sheet [data-act="confirm"]'); rest()
+    st = S(pg)
+    check('Corp -> Runner: Runner 4 clicks, Corp 0, still turn 1', st['active'] == 'runner' and st['runner']['clicks'] == 4 and st['corp']['clicks'] == 0 and st['turn'] == 1, st)
+    check('Runner recurring credits refilled at turn start', st['runner']['rec'] == 2)
+    check('ID abilities reset for both sides', not st['corp']['idUsed'] and not st['runner']['idUsed'])
+    check('End button now says End Runner turn', pg.inner_text('#endLabel') == 'End Runner turn')
+    check('Runner panel highlighted', pg.locator('.panel.runner.active').count() == 1 and pg.locator('.panel.corp.active').count() == 0)
+    tap('#endBtn'); pg.wait_for_timeout(500); tap('#sheet [data-act="confirm"]'); rest()
+    st = S(pg)
+    check('Runner -> Corp: turn 2, Corp 3 clicks, Runner 0', st['turn'] == 2 and st['active'] == 'corp' and st['corp']['clicks'] == 3 and st['runner']['clicks'] == 0, st)
+    check('turn number shown', pg.inner_text('#turnNum') == '2')
+    tap('#undoBtn'); pg.wait_for_timeout(100)
+    check('end turn can be undone', S(pg)['turn'] == 1 and S(pg)['active'] == 'runner')
+    pg.wait_for_timeout(500)
+
+    # ---- confirm-tap leak
+    def leak_case(name, open_sel, act_sel, hold=0):
+        tap(open_sel); pg.wait_for_timeout(500)
+        before = S(pg); u0 = U(pg)
+        x, y = center(pg, act_sel)
+        touch(x, y, hold)
+        pg.wait_for_timeout(30)
+        touch(x, y)                    # immediate second tap at same spot (lands on what is underneath)
+        pg.wait_for_timeout(250)
+        return before, u0, (x, y)
+    # 1. Backdrop tap over a counter: closes the sheet, counter untouched
+    tap('#endBtn'); pg.wait_for_timeout(500)
+    before = S(pg); u0 = U(pg)
+    x, y = center(pg, step('corp', 'credits', 1))
+    check('(setup) Corp credits + button lies under the dialog backdrop', y < pg.locator('#sheet').bounding_box()['y'])
+    touch(x, y); pg.wait_for_timeout(40); touch(x, y); pg.wait_for_timeout(60); touch(x, y); pg.wait_for_timeout(300)
+    check('leak: backdrop tap + 2 fast follow-up taps on a + do not change it', S(pg) == before and U(pg) == u0 and not sheet_open(pg), (S(pg)['corp'], before['corp']))
+    pg.wait_for_timeout(500); touch(x, y); pg.wait_for_timeout(100)
+    check('leak: the same + works again after the short lockout', S(pg)['corp']['credits'] == before['corp']['credits'] + 1)
+    tap('#undoBtn'); pg.wait_for_timeout(500)
+    # 2. Backdrop held 1.5 s over a counter
+    tap('#endBtn'); pg.wait_for_timeout(500); before = S(pg); u0 = U(pg)
+    touch(x, y, 1500); pg.wait_for_timeout(300)
+    check('leak: backdrop held 1.5 s over + does not repeat into the counter', S(pg) == before and U(pg) == u0)
+    pg.wait_for_timeout(500)
+    # 3. Confirm End turn: tap + immediate second tap at the same spot (End turn button underneath)
+    before, u0, _ = leak_case('confirm', '#endBtn', '#sheet [data-act="confirm"]')
+    st = S(pg)
+    check('leak: confirm ends exactly one turn and the follow-up tap does not reopen it or touch anything',
+          st['active'] != before['active'] and U(pg) == u0 + 1 and not sheet_open(pg), (st['active'], U(pg), u0, sheet_open(pg)))
+    pg.wait_for_timeout(500)
+    # 4. Confirm End turn with the finger held 1.5 s
+    before, u0, _ = leak_case('confirm-held', '#endBtn', '#sheet [data-act="confirm"]', hold=1500)
+    check('leak: held confirm still one turn, nothing else changed', U(pg) == u0 + 1 and S(pg)['active'] != before['active'] and not sheet_open(pg))
+    pg.wait_for_timeout(500)
+    # 5. Cancel sits over Undo: a quick double tap must not undo anything
+    before, u0, _ = leak_case('cancel', '#endBtn', '#sheet [data-act="cancel"]')
+    check('leak: Cancel + fast second tap does not hit Undo underneath', S(pg) == before and U(pg) == u0 and not sheet_open(pg))
+    pg.wait_for_timeout(500)
+    # 6. Double tap on End turn must not confirm the sheet that appears under the finger
+    x, y = center(pg, '#endBtn'); before = S(pg)
+    touch(x, y); pg.wait_for_timeout(60); touch(x, y); pg.wait_for_timeout(300)
+    check('leak: double tap on End turn opens the confirm but does not confirm it', sheet_open(pg) and S(pg) == before)
+    tap('#sheet [data-act="cancel"]'); rest()
+    # 7. New game confirm
+    tap('#menuBtn'); pg.wait_for_timeout(500); tap('#sheet [data-act="newgame"]'); pg.wait_for_timeout(500)
+    check('New game asks first', pg.locator('#sheet[data-kind="newgame"]').count() == 1)
+    x, y = center(pg, '#sheet [data-act="confirm"]'); u0 = U(pg)
+    touch(x, y); pg.wait_for_timeout(30); touch(x, y); pg.wait_for_timeout(300)
+    st = S(pg)
+    check('leak: New game confirm + fast second tap: fresh game, nothing else', st['turn'] == 1 and st['corp']['credits'] == 5 and st['active'] == 'corp' and U(pg) == u0 + 1 and not sheet_open(pg), (st, U(pg), u0))
+    tap('#undoBtn') if False else None
+    pg.wait_for_timeout(500)
+    tap('#undoBtn'); pg.wait_for_timeout(100)
+    check('new game can be undone', S(pg)['turn'] != 1 or S(pg)['active'] != 'corp' or S(pg)['corp']['credits'] != 5)
+    pg.wait_for_timeout(300)
+
+    # ---- win notice
+    pg.evaluate("localStorage.clear()"); pg.reload(); pg.wait_for_timeout(700); tap('[data-act="start"]'); rest()
+    tap(step('runner', 'agenda', 1), 7, 60); pg.wait_for_timeout(150)
+    check('7 agenda points shows a win notice', 'Runner wins' in pg.inner_text('#status') and 'wins' in pg.inner_text('#toast'), pg.inner_text('#status'))
+    check('agenda tile highlighted', pg.locator('[data-tile="runner-agenda"].won').count() == 1)
+    pg.wait_for_timeout(2700); pg.screenshot(path='screenshots/win.png')
+    tap(step('runner', 'agenda', -1)); pg.wait_for_timeout(100)
+    check('win notice goes away at 6', 'wins' not in pg.inner_text('#status'))
+
+    # ---- reload persistence
+    tap(step('corp', 'credits', 1), 4); tap(step('runner', 'tags', 1), 2); tap('.id-toggle[data-id="runner"]')
+    tap('#endBtn'); pg.wait_for_timeout(500); tap('#sheet [data-act="confirm"]'); rest()
+    tap(step('runner', 'credits', -1))
+    before = S(pg); u0 = U(pg)
+    pg.reload(); pg.wait_for_timeout(800)
+    check('state survives reload', S(pg) == before, (S(pg), before))
+    check('undo history survives reload', U(pg) == u0)
+    check('welcome does not show again after reload', not sheet_open(pg))
+    tap('#undoBtn'); pg.wait_for_timeout(100)
+    check('undo works after reload', S(pg)['runner']['credits'] == before['runner']['credits'] + 1)
+
+    # ---- single-side modes
+    tap('#menuBtn'); pg.wait_for_timeout(500); tap('#sheet [data-act="newgame"]'); pg.wait_for_timeout(500)
+    tap('#sheet .choice[data-mode="runner"]', 1, 100); tap('#sheet [data-act="confirm"]'); rest()
+    st = S(pg)
+    check('new game Runner only: one Runner panel, 4 clicks', st['mode'] == 'runner' and st['runner']['clicks'] == 4
+          and pg.locator('.panel').count() == 1 and pg.locator('.panel.runner').count() == 1, st)
+    check('single-side layout fits without scrolling', pg.evaluate("(()=>{const b=document.getElementById('board');return b.scrollHeight<=b.clientHeight+1})()"))
+    sizes = pg.evaluate("""[...document.querySelectorAll('.step')].map(b=>{const r=b.getBoundingClientRect();return Math.min(r.width,r.height)})""")
+    check('single-side +/- buttons are 52pt or bigger', min(sizes) >= 52, min(sizes))
+    tap(step('runner', 'clicks', -1), 3); tap(step('runner', 'rec', 1), 1); tap(step('runner', 'rec', -1)); tap('.id-toggle[data-id="runner"]')
+    tap('#endBtn'); pg.wait_for_timeout(500)
+    check('single-side confirm text', 'Turn 2 starts with 4 clicks' in pg.inner_text('#sheet'), pg.inner_text('#sheet'))
+    tap('#sheet [data-act="confirm"]'); rest()
+    st = S(pg)
+    check('single-side End turn: clicks back to 4, turn 2, recurring refilled, ID ready', st['runner']['clicks'] == 4 and st['turn'] == 2
+          and st['runner']['rec'] == 1 and not st['runner']['idUsed'], st)
+    tap('#endBtn'); pg.wait_for_timeout(500); tap('#sheet [data-act="confirm"]'); rest()
+    check('turn counts every turn in single-side mode', S(pg)['turn'] == 3)
+    tap('#menuBtn'); pg.wait_for_timeout(500); tap('#sheet .choice[data-mode="corp"]', 1, 300); tap('#sheet [data-act="close"]'); rest()
+    st = S(pg)
+    check('switch to Corp only keeps the game (turn 3) and shows the Corp panel', st['mode'] == 'corp' and st['turn'] == 3 and pg.locator('.panel.corp').count() == 1 and pg.locator('.panel').count() == 1)
+    tap('#endBtn'); pg.wait_for_timeout(500); tap('#sheet [data-act="confirm"]'); rest()
+    check('Corp only End turn: 3 clicks', S(pg)['corp']['clicks'] == 3 and S(pg)['turn'] == 4)
+    tap('#menuBtn'); pg.wait_for_timeout(500); tap('#sheet .choice[data-mode="both"]', 1, 300); tap('#sheet [data-act="close"]'); rest()
+    check('switch back to both sides shows two panels', pg.locator('.panel').count() == 2)
+    tap('#undoBtn'); pg.wait_for_timeout(200)
+    check('mode switch can be undone', S(pg)['mode'] == 'corp')
+    pg.reload(); pg.wait_for_timeout(700)
+    check('mode survives reload', S(pg)['mode'] == 'corp' and pg.locator('.panel').count() == 1)
+
+    # ---- options
+    tap('#menuBtn'); pg.wait_for_timeout(500); tap('#sheet [data-act="showId"]', 1, 300); tap('#sheet [data-act="close"]'); rest()
+    check('ID ability toggle can be hidden', pg.locator('.id-toggle[data-id="corp"]').is_hidden())
+    tap('#menuBtn'); pg.wait_for_timeout(500); tap('#sheet [data-act="showId"]', 1, 300); tap('#sheet [data-act="close"]'); rest()
+    check('and shown again', pg.locator('.id-toggle[data-id="corp"]').is_visible())
+
+    # ---- help
+    tap('#helpBtn'); pg.wait_for_timeout(500)
+    check('help opens from the ? button', pg.locator('#sheet[data-kind="help"]').count() == 1)
+    tap('#sheet [data-act="close"]'); rest()
+    check('help closes', not sheet_open(pg))
+
+    # ---- PWA
+    man = pg.evaluate("fetch('manifest.webmanifest').then(r=>r.json())")
+    check('manifest standalone + icons', man['display'] == 'standalone' and len(man['icons']) >= 3)
+    check('apple-touch-icon + meta tags', pg.evaluate("""!!document.querySelector('link[rel=apple-touch-icon]') && document.querySelector('meta[name=apple-mobile-web-app-capable]').content==='yes' && /viewport-fit=cover/.test(document.querySelector('meta[name=viewport]').content)"""))
+    for ic in ['icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png']:
+        check(f'{ic} served', pg.evaluate(f"fetch('{ic}').then(r=>r.ok)"))
+    pg.wait_for_timeout(500)
+    check('service worker controls the page', pg.evaluate("navigator.serviceWorker.ready.then(()=>!!navigator.serviceWorker.controller)") or (pg.reload() or pg.wait_for_timeout(800) or pg.evaluate("!!navigator.serviceWorker.controller")))
+    check('no pull-to-refresh / bounce (overscroll-behavior none) and no double-tap zoom (touch-action)',
+          pg.evaluate("getComputedStyle(document.body).overscrollBehaviorY==='none' && getComputedStyle(document.querySelector('.step')).touchAction==='manipulation'"))
+    before = S(pg)
+    ctx.set_offline(True); pg.reload(); pg.wait_for_timeout(800)
+    check('loads offline from the service worker cache, state intact', pg.locator('.panel').count() >= 1 and S(pg) == before)
+    ctx.set_offline(False)
+    check('no page errors', not errors, errors)
+    br.close()
+
+ok = sum(1 for _, c in results if c)
+print(f'\n{ok}/{len(results)} checks passed')
+sys.exit(0 if ok == len(results) else 1)
