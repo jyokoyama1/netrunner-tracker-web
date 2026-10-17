@@ -10,19 +10,17 @@ Replaces Android: Netrunner tokens. A fresh web app (not a port of the GBA look)
 ## Features
 - Modes, picked on the welcome screen and at New game, switchable any time in the Menu (switching keeps the game and is undoable):
   **Both sides** (Corp panel on top, Runner below, one phone) or **Corp only** / **Runner only** (each player on their own phone).
-- Counters per side: Clicks (big number + pips), Credits (start 5), Agenda points, Recurring credits, and an ID ability Ready/Used toggle.
+- Counters per side: Clicks (big number + pips), Credits (start 5), Agenda points, and an ID ability Ready/Used toggle.
   Corp also has Bad publicity; Runner has Tags and Brain damage. Turn number in the top bar.
-- Both sides: End turn hands over. The side ending drops to 0 clicks, the side starting gets Corp 3 / Runner 4 and its recurring credits refill.
+- Both sides: End turn hands over. The side ending drops to 0 clicks, the side starting gets Corp 3 / Runner 4.
   The turn number goes up when the Corp starts (turn = Corp turn + Runner turn). Top bar shows whose turn it is; the active panel glows.
-- Single side: End turn resets your clicks (3 or 4), adds one to the turn number, refills your recurring credits.
+- Single side: End turn resets your clicks (3 or 4), adds one to the turn number.
 - Every End turn makes both ID abilities Ready again ("once per turn" counts on either player's turn).
 - 7+ agenda points: the top bar shows "Corp wins!" / "Runner wins!", the tile turns gold, a toast pops. No lock; keep tracking if you like.
 - Undo: 50 steps, toast names what was undone. Undo history is saved too. New game, End turn and mode switches are undoable.
 - Hold + or − to repeat (after 0.42 s, faster after ~1.3 s); a whole hold is one undo step.
-- Recurring credits: + adds one (and raises the refill amount if it goes past it, i.e. a new card); − spends one.
-  Tap the number to open an editor with "Available now" and "Refill each turn" steppers.
 - Menu: tracking mode, "ID ability toggle" on/off, "Corp faces across the table" (face-to-face, both-sides mode only, see below), New game, Help. Help (?) button in the top bar; the help shows by itself on first launch (with the mode picker).
-- Limits: credits 0–999, clicks 0–9 (pips grow past the base for extra clicks), others 0–99, recurring 0–20. A change that hits a limit adds no undo step.
+- Limits: credits 0–999, clicks 0–9 (pips grow past the base for extra clicks), others 0–99. A change that hits a limit adds no undo step.
 
 ## Face-to-face mode (v1.1, Oct 17 2026, Jeffery's request)
 - Physical top to bottom: Corp bar (End Corp turn + Undo, rotated 180°) · Corp panel (rotated 180°) · turn strip (Turn n, whose turn, ?, menu) ·
@@ -52,6 +50,21 @@ So the SVGs are copied unmodified and tinted at display time with CSS masks (`.i
 Menu → "Runner damage name": Core damage (default, newer name) / Brain damage. Saved in `settings.damage`. The stored counter key stays
 `brain`. Tile label, button labels, help text and undo messages all use the chosen name (stored undo labels are rewritten when shown).
 
+## v1.3 (Oct 17 2026)
+- **Recurring credits removed** (counters, editor, refill on End turn, help, tests, `NSG_RECURRING_CREDIT.svg` and its cache entry).
+  `migrate()` in app.js drops `rec`/`recMax` from saved state and undo snapshots and fills any missing counters, so 1.0-1.2 saves
+  load with or without them (the upgraded save is written back once).
+- Layout rebalanced: both sides now has Corp 2 tile rows (Clicks/Credits, Agenda/Bad publicity) and Runner 3
+  (Clicks/Credits, Agenda/Tags, Core damage full width). Panels split the height by rows (flex 5:7), every tile row has the same height,
+  and steppers are centred in their tiles. In one-side mode the hero tiles take the freed space.
+- **Opponent counters in one-side modes** (Menu, only shown in the relevant mode, off by default, saved as `settings.oppTags` / `oppBad`):
+  Corp only → "Show Runner tags"; Runner only → "Show Corp bad publicity". The tile is labelled "Runner tags" / "Corp bad publicity",
+  uses the opponent's colour (icon + dashed border), and stores the value in the opponent's state (`runner.tags` / `corp.bad`),
+  so undo, saving and switching to both sides all just work. End turn doesn't touch it.
+- **Face-to-face is the default for both sides** (first launch and New game). `settings.faceChosen` records that the user has used the
+  Menu toggle, and from then on their choice is kept, including through New game. Old saves don't record that, so a save with
+  face-to-face on stays on (it was off by default, so the user turned it on), and one with it off switches on once.
+
 ## Tap-leak rule (the GBA bug, solved for touch)
 - Dialogs are bottom sheets over a full-screen backdrop that swallows pointer events; actions fire on `click`.
 - A counter only reacts to a press whose pointerdown started on that button while no dialog was open and outside the lockout.
@@ -63,11 +76,11 @@ Menu → "Runner damage name": Core damage (default, newer name) / Brain damage.
 ## Files
 `index.html` (markup + inline SVG icon sprite), `styles.css`, `app.js` (all logic), `sw.js` (offline cache), `manifest.webmanifest`,
 `icons/` (apple-touch-icon 180, 192, 512, maskable 512, favicon.svg; PNGs rendered from the SVG with headless Chrome),
-`tests/verify.py` (137 Playwright checks), `tests/shots.py` (screenshots into `screenshots/`).
+`tests/verify.py` (168 Playwright checks), `tests/shots.py` (screenshots into `screenshots/`).
 No build step, no dependencies, no external fonts (system font: SF Pro on iPhone).
 
 ## Saving
-localStorage key `nrtracker.v1`: `{v, state, undo:[{s,label}], settings:{showId, faceToFace, damage, faction:{corp, runner}}, helpSeen}`. Written after every change.
+localStorage key `nrtracker.v1`: `{v, state, undo:[{s,label}], settings:{showId, faceToFace, faceChosen, damage, faction:{corp, runner}, oppTags, oppBad}, helpSeen}`. Written after every change.
 Bad/corrupt data → fresh game + welcome. Note: iOS keeps home-screen web app storage separate from Safari tabs.
 
 ## PWA details

@@ -404,7 +404,6 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .ico-bad { --m: url(assets/nsg/NSG_BAD_PUBLICITY.svg); }
 .ico-tags { --m: url(assets/nsg/NSG_TAG.svg); }
 .ico-damage { --m: url(assets/nsg/NSG_CORE_DAMAGE.svg); }
-.ico-rec { --m: url(assets/nsg/NSG_RECURRING_CREDIT.svg); }
 .tile-label .ico { width: 19px; height: 19px; color: var(--accent); margin: -2px 0; }
 .ico-bad, .ico-tags, .ico-damage { transform: scale(1.3); } /* these symbols have more padding in their artwork */
 .tile.won .tile-label .ico { color: var(--win); }
@@ -458,3 +457,22 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   margin: 12px -20px calc(-1 * (var(--safe-b) + 18px)); padding: 14px 20px calc(var(--safe-b) + 18px);
   background: linear-gradient(180deg, rgba(18,21,29,0), #12151d 26%);
 }
+
+/* opponent counter in one-side modes, in the opponent's colour */
+.tile.opp.runner { --accent: var(--runner); --accent-2: var(--runner-2); --accent-rgb: 255,61,120; }
+.tile.opp.corp { --accent: var(--corp); --accent-2: var(--corp-2); --accent-rgb: 47,208,255; }
+.tile.opp { border-style: dashed; border-color: rgba(var(--accent-rgb), .35); }
+.menu-item.opp-item.runner .menu-ico { color: var(--runner); }
+.menu-item.opp-item.corp .menu-ico { color: var(--corp); }
+/* both sides: Corp has 2 rows of tiles, Runner 3, so share the height by rows */
+.board.both .panel.corp { flex-grow: 5; }
+.board.both .panel.runner { flex-grow: 7; }
+/* both sides (incl. face-to-face): every tile row gets the same height, steppers centred in the tile */
+.board.both .hero, .board.both .minor { flex: 1 1 0; grid-auto-rows: 1fr; }
+.board.both .panel.runner .minor { flex-grow: 2; }
+.board.both .tile { justify-content: flex-start; }
+.board.both .tile .stepper { flex: 1; align-items: center; }
+.board.both .minor .value { font-size: 36px; }
+.board.both .hero .value { font-size: 42px; }
+.app.f2f .board.both .minor .value { font-size: 32px; }
+.app.f2f .board.both .hero .value { font-size: 38px; }

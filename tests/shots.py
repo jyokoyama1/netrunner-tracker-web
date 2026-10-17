@@ -11,6 +11,9 @@ with sync_playwright() as p:
     c = ctx(b); pg = c.new_page(); pg.goto(BASE); pg.wait_for_timeout(700)
     pg.screenshot(path=OUT+'welcome.png')
     pg.click('[data-act="start"]'); pg.wait_for_timeout(700)
+    # face-to-face is the default for both sides; turn it off for the plain both-sides shots
+    pg.click('#menuBtn'); pg.wait_for_timeout(500); pg.click('[data-act="face"]'); pg.wait_for_timeout(200)
+    pg.click('[data-act="close"]'); pg.wait_for_timeout(700)
     # make a mid-game state for the both-sides shot
     def tap(sel, n=1):
         for _ in range(n):
@@ -20,7 +23,7 @@ with sync_playwright() as p:
     tap('[data-side="corp"][data-key="credits"][data-d="1"]', 3)
     tap('[data-side="corp"][data-key="agenda"][data-d="1"]', 2)
     tap('[data-side="runner"][data-key="tags"][data-d="1"]')
-    tap('[data-side="corp"][data-key="rec"][data-d="1"]', 2)
+    tap('[data-side="corp"][data-key="bad"][data-d="1"]', 1)
     pg.wait_for_timeout(2200)
     pg.screenshot(path=OUT+'both-sides.png')
     pg.evaluate("document.documentElement.style.setProperty('--safe-t','47px');document.documentElement.style.setProperty('--safe-b','34px')")
@@ -41,6 +44,17 @@ with sync_playwright() as p:
     pg.click('[data-act="setmode"][data-mode="corp"]'); pg.wait_for_timeout(200)
     pg.click('[data-act="close"]'); pg.wait_for_timeout(2200)
     pg.screenshot(path=OUT+'corp-only.png')
+    # opponent counters in one-side modes
+    pg.click('#menuBtn'); pg.wait_for_timeout(500); pg.click('[data-k="oppTags"]'); pg.wait_for_timeout(200)
+    pg.click('[data-act="close"]'); pg.wait_for_timeout(700)
+    tap('[data-side="runner"][data-key="tags"][data-d="1"]', 1)
+    pg.wait_for_timeout(2200); pg.screenshot(path=OUT+'corp-only-runner-tags.png')
+    pg.click('#menuBtn'); pg.wait_for_timeout(500)
+    pg.click('[data-act="setmode"][data-mode="runner"]'); pg.wait_for_timeout(200)
+    pg.click('[data-k="oppBad"]'); pg.wait_for_timeout(200)
+    pg.screenshot(path=OUT+'menu-runner-only.png')
+    pg.click('[data-act="close"]'); pg.wait_for_timeout(2200)
+    pg.screenshot(path=OUT+'runner-only-corp-bad-publicity.png')
     # face-to-face (Corp half flipped) with simulated iPhone safe areas
     pg.click('#menuBtn'); pg.wait_for_timeout(500)
     pg.click('[data-act="setmode"][data-mode="both"]'); pg.wait_for_timeout(200)
