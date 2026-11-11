@@ -2,7 +2,7 @@
 (() => {
 'use strict';
 
-const VERSION = '1.4.0';
+const VERSION = '1.4.1';
 const STORE_KEY = 'nrtracker.v1';
 const UNDO_MAX = 50;
 const BASE_CLICKS = { corp: 3, runner: 4 };
@@ -543,6 +543,7 @@ function render() {
   $('corpEndBtn').setAttribute('aria-disabled', String(corpIdle));
   $('corpUndoBtn').disabled = undo.length === 0;
   $('corpUndoCount').textContent = undo.length;
+  fitLayout();
 }
 
 // --------------------------------------------------------------- toast
@@ -821,6 +822,28 @@ function openRoll(flip = false) {
 }
 
 // Keep the app sized to the visible viewport (Safari toolbars, iPhone notch / home bar).
+/** If stacked Clicks/Credits would overflow the board, sit them side by side. Called from render (after any rebuild, before paint) and whenever the board is resized. */
+let fitting = false;
+function fitLayout() {
+  if (fitting || !board) return;
+  fitting = true;
+  try {
+    const cls = board.classList.contains('single') ? 'compact-hero' : board.classList.contains('both') ? 'compact-both' : '';
+    if (!cls) {
+      board.classList.remove('compact-hero', 'compact-both');
+      return;
+    }
+    board.classList.remove(cls === 'compact-hero' ? 'compact-both' : 'compact-hero');
+    if (!board.classList.contains(cls)) {
+      if (board.scrollHeight > board.clientHeight + 1) board.classList.add(cls);
+    } else if (board.clientHeight - board.scrollHeight > 100) {
+      board.classList.remove(cls);
+      void board.offsetHeight;
+      if (board.scrollHeight > board.clientHeight + 1) board.classList.add(cls);
+    }
+  } finally { fitting = false; }
+}
+
 function syncViewport() {
   const vv = window.visualViewport;
   const h = Math.round((vv && vv.height) || window.innerHeight);
@@ -835,6 +858,10 @@ window.addEventListener('resize', syncViewport);
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', syncViewport);
   window.visualViewport.addEventListener('scroll', syncViewport);
+}
+if (typeof ResizeObserver !== 'undefined') {
+  new ResizeObserver(() => fitLayout()).observe(board);
+  new ResizeObserver(() => fitLayout()).observe($('app'));
 }
 
 // --------------------------------------------------------------- wiring

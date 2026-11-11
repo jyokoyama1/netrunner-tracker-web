@@ -110,5 +110,31 @@ with sync_playwright() as p:
     if not pg.evaluate("window.__nrt.state.mark"):
         pg.click('[data-mark-btn]'); pg.wait_for_timeout(1100)
     pg.screenshot(path=OUT+'runner-only-mark.png')
+    c.close()
+    # iPhone SE (375x667) with simulated safe areas — official tight-viewport shots
+    def seed(pg, mode, extra):
+        settings = dict(showId=True, faceToFace=False, faceChosen=True, damage='core',
+                        faction={'corp': '', 'runner': ''}, oppTags=False, oppBad=False, rollMax=5, rollCount=1)
+        settings.update({k: v for k, v in extra.items() if k != 'mark'})
+        stt = {'mode': mode, 'turn': 1, 'active': 'runner' if mode == 'runner' else 'corp',
+               'corp': {'clicks': 3, 'credits': 7, 'agenda': 2, 'idUsed': False, 'bad': 1},
+               'runner': {'clicks': 4, 'credits': 8, 'agenda': 1, 'idUsed': False, 'tags': 2, 'brain': 0},
+               'mark': extra.get('mark')}
+        payload = {'v': 1, 'state': stt, 'undo': [], 'settings': settings, 'helpSeen': True}
+        pg.evaluate("localStorage.setItem('nrtracker.v1', JSON.stringify(" + json.dumps(payload) + "))")
+    se = b.new_context(viewport={'width': 375, 'height': 667}, device_scale_factor=3, is_mobile=True, has_touch=True,
+        user_agent='Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1')
+    pg = se.new_page(); pg.goto(BASE); pg.wait_for_timeout(400)
+    for mode, extra, name in [
+        ('both', {'mark': 'rd'}, 'se-safe-both-sides-mark.png'),
+        ('both', {'faceToFace': True, 'mark': 'hq'}, 'se-safe-face-to-face-mark.png'),
+        ('runner', {'oppBad': True, 'mark': 'archives'}, 'se-safe-runner-only-mark.png'),
+    ]:
+        seed(pg, mode, extra)
+        pg.reload(); pg.wait_for_timeout(500)
+        pg.evaluate("document.documentElement.style.setProperty('--safe-t','47px');document.documentElement.style.setProperty('--safe-b','34px')")
+        pg.wait_for_timeout(200)
+        pg.screenshot(path=OUT+name)
+    se.close()
     print('ok')
     b.close()

@@ -653,6 +653,34 @@ with sync_playwright() as p:
               };
               const btns = [...document.querySelectorAll('.step, .icon-btn, .undo-btn, .end-btn, .mark-btn, .id-toggle')].filter((x) => x.offsetParent);
               const sizes = btns.map(hit);
+              const slack = 1;
+              const tileIssues = [];
+              const tiles = [...document.querySelectorAll('.tile')].filter((t) => t.offsetParent);
+              for (const tile of tiles) {
+                const tr = tile.getBoundingClientRect();
+                const cs = getComputedStyle(tile);
+                const inset = {
+                  top: tr.top + parseFloat(cs.borderTopWidth) + parseFloat(cs.paddingTop),
+                  bottom: tr.bottom - parseFloat(cs.borderBottomWidth) - parseFloat(cs.paddingBottom),
+                  left: tr.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft),
+                  right: tr.right - parseFloat(cs.borderRightWidth) - parseFloat(cs.paddingRight),
+                };
+                for (const kid of tile.querySelectorAll('*')) {
+                  const r = kid.getBoundingClientRect();
+                  if (!(kid.offsetParent) || r.width < 0.5 || r.height < 0.5) continue;
+                  if (r.top < inset.top - slack || r.bottom > inset.bottom + slack || r.left < inset.left - slack || r.right > inset.right + slack) {
+                    tileIssues.push({kind:'overflow', tile: tile.dataset.tile, el: (kid.className||kid.tagName||'').toString().slice(0,40),
+                      d:[Math.round((inset.top-r.top)*10)/10, Math.round((r.bottom-inset.bottom)*10)/10, Math.round((inset.left-r.left)*10)/10, Math.round((r.right-inset.right)*10)/10]});
+                  }
+                }
+              }
+              for (let i = 0; i < tiles.length; i++) {
+                for (let j = i + 1; j < tiles.length; j++) {
+                  const a = tiles[i].getBoundingClientRect(), c = tiles[j].getBoundingClientRect();
+                  const overlap = !(a.right <= c.left + slack || c.right <= a.left + slack || a.bottom <= c.top + slack || c.bottom <= a.top + slack);
+                  if (overlap) tileIssues.push({kind:'overlap', a: tiles[i].dataset.tile, b: tiles[j].dataset.tile});
+                }
+              }
               return {
                 scrollHeight: el.scrollHeight, clientHeight: el.clientHeight,
                 innerHeight: window.innerHeight, vv: vv ? vv.height : null,
@@ -663,6 +691,8 @@ with sync_playwright() as p:
                   const p = el.closest('.panel').getBoundingClientRect(), r = el.getBoundingClientRect();
                   return r.right > p.right + 1 || r.left < p.left - 1 || r.top < p.top - 1;
                 }).map((el) => el.className),
+                tileIssues,
+                compact: b.classList.contains('compact-hero'),
               };
             })()""")
             label = f'{cname} @ {vname}'
@@ -671,6 +701,7 @@ with sync_playwright() as p:
             check(f'{label}: board fits without scrolling', info['board'][0] <= info['board'][1] + 1, info)
             check(f'{label}: tap targets at least 44pt', info['minBtn'] >= 44, info)
             check(f'{label}: mark and ID stay inside the panel', not info['clipped'], info['clipped'])
+            check(f'{label}: tile contents stay inside their tile padding and tiles do not overlap', not info['tileIssues'], info['tileIssues'][:6])
     pg.set_viewport_size({'width': 390, 'height': 844})
     pg.evaluate("document.documentElement.style.removeProperty('--safe-t');document.documentElement.style.removeProperty('--safe-b')")
     pg.wait_for_timeout(100)

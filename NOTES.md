@@ -71,6 +71,10 @@ Menu → "Runner damage name": Core damage (default, newer name) / Brain damage.
 - **Runner's mark**: a Mark button on the Runner panel (both-sides and Runner-only). It picks HQ, R&D or Archives uniformly (crypto random), plays a short reveal, and shows a persistent chip with the NSG server icon tinted Runner colour. Saved as `state.mark`. Declaring it is undoable. It clears when the Runner's turn ends (both-sides: End Runner turn; Runner-only: End turn). Hidden in Corp-only — the Runner declares their mark, and that mode has no "end of the Runner's turn" to clear it.
 - Layout: the app is sized to the visible viewport (`100dvh` + `visualViewport` → `--app-h` / `--vh`). Tiles and numbers use `clamp` so they shrink on shorter phones (iPhone SE, Safari with toolbars). Tap targets stay at least 44pt. The board no longer scrolls; everything must fit.
 
+## v1.4.1 (Nov 11 2026)
+- **Single-side Clicks/Credits no longer overflow their tiles.** Hero and minor sections were sharing height 2:3 with `min-height: 0`, so the big numbers and 44pt buttons spilled into the next tile (visible in `runner-only-mark.png`). Tiles now use `min-height: min-content` so they never shrink below their contents, leftover space goes to the hero first, and if the board would still scroll (short phones, mark row, opponent counters, safe areas) Clicks and Credits sit side by side (`.compact-hero`). Both-sides gets a similar `.compact-both` tightening only when needed. Counter icons are sized in their box (no CSS scale) so they stay inside the tile padding.
+- Tests now assert that every child of each tile lies within that tile's padding box and that tiles do not overlap, across the same viewports and mode/toggle combinations as the no-scroll checks.
+
 ## Tap-leak rule (the GBA bug, solved for touch)
 - Dialogs are bottom sheets over a full-screen backdrop that swallows pointer events; actions fire on `click`.
 - A counter only reacts to a press whose pointerdown started on that button while no dialog was open and outside the lockout.
@@ -82,7 +86,7 @@ Menu → "Runner damage name": Core damage (default, newer name) / Brain damage.
 ## Files
 `index.html` (markup + inline SVG icon sprite), `styles.css`, `app.js` (all logic), `sw.js` (offline cache), `manifest.webmanifest`,
 `icons/` (apple-touch-icon 180, 192, 512, maskable 512, favicon.svg; PNGs rendered from the SVG with headless Chrome),
-`tests/verify.py` (422 Playwright checks), `tests/shots.py` (screenshots into `screenshots/`).
+`tests/verify.py` (476 Playwright checks), `tests/shots.py` (screenshots into `screenshots/`).
 No build step, no dependencies, no external fonts (system font: SF Pro on iPhone).
 
 ## Saving

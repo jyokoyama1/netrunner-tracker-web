@@ -111,7 +111,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .panel.flipped { transform: rotate(180deg); }
 .panel > * { position: relative; }
 
-.panel-head { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 2px 0 6px; min-width: 0; }
+.panel-head { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 2px 0 6px; min-width: 0; flex: none; }
 .side-name { flex: none; }
 .id-toggle, .mark-btn { flex: none; }
 .side-name { display: flex; align-items: center; gap: 8px; font-size: 19px; font-weight: 750; letter-spacing: -.01em; color: var(--accent); }
@@ -217,16 +217,16 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .board.single .panel-head { min-height: 44px; flex: none; }
 .board.single .side-name { font-size: clamp(18px, 3.2 * var(--vh, 1vh), 24px); }
 .board.single .side-name svg { width: 26px; height: 26px; }
-.board.single .hero { grid-template-columns: 1fr; grid-auto-rows: 1fr; gap: clamp(6px, 1.2 * var(--vh, 1vh), 10px); flex: 2 1 0; min-height: 0; }
+.board.single .hero { grid-template-columns: 1fr; grid-auto-rows: minmax(min-content, 1fr); gap: clamp(6px, 1.2 * var(--vh, 1vh), 10px); flex: 2 1 auto; min-height: min-content; }
 .board.single .hero .stepper { flex: 1; align-items: center; }
-.board.single .hero .tile { padding: clamp(6px, 1.2 * var(--vh, 1vh), 12px) 10px clamp(6px, 1 * var(--vh, 1vh), 10px); border-radius: 18px; gap: 6px; min-height: 0; }
+.board.single .hero .tile { padding: clamp(6px, 1.2 * var(--vh, 1vh), 12px) 10px clamp(6px, 1 * var(--vh, 1vh), 10px); border-radius: 18px; gap: 6px; min-height: min-content; }
 .board.single .tile-label { font-size: 15px; }
 .board.single .tile-label svg { width: 18px; height: 18px; }
 .board.single .hero .step { width: clamp(44px, 8 * var(--vh, 1vh), 64px); height: clamp(44px, 8 * var(--vh, 1vh), 64px); border-radius: 18px; }
 .board.single .hero .step svg { width: 28px; height: 28px; }
 .board.single .hero .value { font-size: clamp(40px, 9.5 * var(--vh, 1vh), 80px); }
-.board.single .minor { grid-template-columns: 1fr; grid-auto-rows: 1fr; gap: clamp(5px, 1 * var(--vh, 1vh), 8px); flex: 3 1 0; min-height: 0; }
-.board.single .minor .tile { flex-direction: row; align-items: center; padding: clamp(4px, 0.9 * var(--vh, 1vh), 8px); border-radius: 18px; min-height: 0; }
+.board.single .minor { grid-template-columns: 1fr; grid-auto-rows: minmax(min-content, 1fr); gap: clamp(5px, 1 * var(--vh, 1vh), 8px); flex: 3 1 auto; min-height: min-content; }
+.board.single .minor .tile { flex-direction: row; align-items: center; padding: clamp(4px, 0.9 * var(--vh, 1vh), 8px); border-radius: 18px; min-height: min-content; }
 .board.single .minor .tile-label { flex: 1; font-size: clamp(13px, 2 * var(--vh, 1vh), 16px); color: var(--text); font-weight: 600; }
 .board.single .minor .tile-label svg { width: 20px; height: 20px; }
 .board.single .minor .stepper { gap: 4px; flex: none; }
@@ -379,7 +379,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 
 /* ---------- face-to-face (Corp half turned toward the far player) ---------- */
 .corpbar { grid-area: corp; transform: rotate(180deg); }
-.app.f2f .board { padding: 4px 0; gap: 6px; }
+.app.f2f .board { padding: 0; gap: 3px; }
 .app.f2f .board .topbar { flex: none; height: 44px; padding: 0 2px; }
 .end-btn.idle {
   color: var(--faint); background: var(--surface); border: 1px solid var(--tile-border); box-shadow: none;
@@ -391,7 +391,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .toast.flipped { bottom: auto; top: calc(var(--safe-t) + 74px); transform: translate(-50%, -12px) rotate(180deg); }
 .toast.flipped.show { transform: translate(-50%, 0) rotate(180deg); }
 /* face-to-face needs one more bar and the mid strip: tighten everything a little (targets stay 44pt) */
-.app.f2f .undo-btn, .app.f2f .end-btn { height: 48px; border-radius: 16px; font-size: 16px; }
+.app.f2f .undo-btn, .app.f2f .end-btn { height: 44px; border-radius: 16px; font-size: 16px; }
 .app.f2f .panel { gap: 5px; padding: 6px; }
 .app.f2f .panel-head { min-height: 30px; }
 .app.f2f .side-name { font-size: 18px; }
@@ -419,8 +419,9 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .ico-bad { --m: url(assets/nsg/NSG_BAD_PUBLICITY.svg); }
 .ico-tags { --m: url(assets/nsg/NSG_TAG.svg); }
 .ico-damage { --m: url(assets/nsg/NSG_CORE_DAMAGE.svg); }
-.tile-label .ico { width: 19px; height: 19px; color: var(--accent); margin: -2px 0; }
-.ico-bad, .ico-tags, .ico-damage { transform: scale(1.3); } /* these symbols have more padding in their artwork */
+.tile-label .ico { width: 19px; height: 19px; color: var(--accent); margin: 0; }
+/* these symbols have more padding in their artwork: size the box up instead of scaling, so they stay inside the tile */
+.tile-label .ico-bad, .tile-label .ico-tags, .tile-label .ico-damage { width: 22px; height: 22px; }
 .tile.won .tile-label .ico { color: var(--win); }
 .help-list .hi .ico { width: 22px; height: 22px; }
 .credits-value { flex-direction: row; gap: 3px; }
@@ -480,21 +481,20 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .menu-item.opp-item.runner .menu-ico { color: var(--runner); }
 .menu-item.opp-item.corp .menu-ico { color: var(--corp); }
 /* both sides: Corp has 2 rows of tiles, Runner 3, so share the height by rows */
-.board.both { gap: clamp(4px, 1.1 * var(--vh, 1vh), 10px); padding: clamp(0px, 0.25 * var(--vh, 1vh), 2px) 0 clamp(2px, 0.9 * var(--vh, 1vh), 8px); }
+.board.both { gap: clamp(3px, 1.1 * var(--vh, 1vh), 10px); padding: 0; }
 .board.both .panel { gap: clamp(3px, 0.7 * var(--vh, 1vh), 6px); padding: clamp(4px, 0.8 * var(--vh, 1vh), 7px) 8px; }
 .board.both .panel.corp { flex-grow: 5; }
 .board.both .panel.runner { flex-grow: 7; }
 /* both sides (incl. face-to-face): every tile row gets the same height, steppers centred in the tile */
-.board.both .hero, .board.both .minor { flex: 1 1 0; min-height: 0; grid-auto-rows: 1fr; gap: clamp(3px, 0.7 * var(--vh, 1vh), 6px); }
+.board.both .hero, .board.both .minor { flex: 1 1 0; min-height: min-content; grid-auto-rows: minmax(min-content, 1fr); gap: clamp(3px, 0.7 * var(--vh, 1vh), 6px); }
 .board.both .panel.runner .minor { flex-grow: 2; }
-.board.both .tile { justify-content: flex-start; padding: clamp(2px, 0.55 * var(--vh, 1vh), 6px) clamp(4px, 0.7 * var(--vh, 1vh), 6px); }
+.board.both .tile { justify-content: flex-start; padding: clamp(2px, 0.55 * var(--vh, 1vh), 6px) clamp(4px, 0.7 * var(--vh, 1vh), 6px); min-height: min-content; }
 .board.both .tile .stepper { flex: 1; align-items: center; min-height: 44px; }
 .board.both .tile-label { font-size: clamp(11px, 1.6 * var(--vh, 1vh), 13px); }
 .board.both .minor .value { font-size: clamp(26px, 4.2 * var(--vh, 1vh), 36px); }
 .board.both .hero .value { font-size: clamp(28px, 5 * var(--vh, 1vh), 42px); }
 .app.f2f .board.both .minor .value { font-size: clamp(24px, 3.8 * var(--vh, 1vh), 32px); }
 .app.f2f .board.both .hero .value { font-size: clamp(26px, 4.4 * var(--vh, 1vh), 38px); }
-.app.f2f .board.both .panel-head { min-height: 0; }
 
 /* ---------- mark chip (Runner panel, or hidden in Corp-only) ---------- */
 .mark-btn {
@@ -561,3 +561,26 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 /* Single-side: give the mark its own row so "Archives" + "ID ability Ready" never collide. */
 .board.single .panel-head:has([data-mark-btn]) { flex-wrap: wrap; row-gap: 6px; }
 .board.single .panel-head:has([data-mark-btn]) .mark-btn { order: 8; }
+
+/* When the board is too short for stacked Clicks/Credits, sit them in one row so every tile can keep its padding and 44pt targets. */
+.board.single.compact-hero .hero {
+  grid-template-columns: 1fr 1fr;
+  flex: 1 1 auto;
+}
+.board.single.compact-hero .hero .tile { padding: 8px 8px 8px; gap: 4px; }
+.board.single.compact-hero .hero .step { width: clamp(44px, 6 * var(--vh, 1vh), 52px); height: clamp(44px, 6 * var(--vh, 1vh), 52px); border-radius: 16px; }
+.board.single.compact-hero .hero .step svg { width: 24px; height: 24px; }
+.board.single.compact-hero .hero .value { font-size: clamp(32px, 6 * var(--vh, 1vh), 52px); }
+.board.single.compact-hero .hero .pips { gap: 2px; }
+.board.single.compact-hero .hero .pip { width: 16px; height: 16px; }
+.board.single.compact-hero .hero .pips.many .pip { width: 13px; height: 13px; }
+
+/* Both-sides on a short phone (e.g. SE with the notch and home bar): tighten just enough that tiles keep their padding and the board does not scroll. */
+.board.both.compact-both { gap: 2px; }
+.board.both.compact-both .panel { gap: 2px; padding: 3px 8px; }
+.board.both.compact-both .hero, .board.both.compact-both .minor { gap: 2px; }
+.board.both.compact-both .tile { padding: 2px 5px; }
+.board.both.compact-both .panel-head { min-height: 32px; }
+.board.both.compact-both .tile-label { font-size: 11px; line-height: 14px; }
+.board.both.compact-both .hero .value { font-size: 30px; }
+.board.both.compact-both .minor .value { font-size: 26px; }
