@@ -2,7 +2,7 @@
 (() => {
 'use strict';
 
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 const STORE_KEY = 'nrtracker.v1';
 const UNDO_MAX = 50;
 const BASE_CLICKS = { corp: 3, runner: 4 };
@@ -24,6 +24,40 @@ const withDmgName = (text) => text.replace(/\b(brain|core) damage/gi, (m) => (m[
 const ICON = { clicks: 'clicks', credits: 'credits', agenda: 'agenda', bad: 'bad',
   tags: 'tags', brain: 'damage' };
 const ico = (name, extra = '') => `<span class="ico ico-${name} ${extra}" aria-hidden="true"></span>`;
+// Central servers used by the Runner's mark (NSG icons, tinted Runner colour).
+const MARKS = [
+  { id: 'hq', name: 'HQ', ico: 'hq' },
+  { id: 'rd', name: 'R&D', ico: 'rd' },
+  { id: 'archives', name: 'Archives', ico: 'archives' },
+];
+const markOf = (id) => MARKS.find((m) => m.id === id) || null;
+const ROLL_MIN = 2, ROLL_MAX = 50, ROLL_COUNT_MAX = 10;
+const ROLL_PRESETS = [3, 5, 6, 8, 10];
+/** Unbiased integer in [0, n). Rejection sampling on 32-bit crypto values, so the result is not skewed by a naive modulo. */
+function randInt(n) {
+  if (!Number.isInteger(n) || n < 1 || n > 0xFFFFFFFF) throw new RangeError('randInt');
+  const cap = Math.floor(0x100000000 / n) * n;
+  const buf = new Uint32Array(1);
+  let x;
+  do { crypto.getRandomValues(buf); x = buf[0]; } while (x >= cap);
+  return x % n;
+}
+/** k distinct numbers from 1 to n, in the order they were picked. */
+function pickDistinct(n, k) {
+  n = Math.max(1, Math.min(ROLL_MAX, n | 0));
+  k = Math.max(1, Math.min(k | 0, n, ROLL_COUNT_MAX));
+  const a = Array.from({ length: n }, (_, i) => i + 1);
+  const out = [];
+  for (let i = 0; i < k; i++) {
+    const j = i + randInt(n - i);
+    const tmp = a[i]; a[i] = a[j]; a[j] = tmp;
+    out.push(a[i]);
+  }
+  return out;
+}
+function pickMarkId() { return MARKS[randInt(MARKS.length)].id; }
+function clampRollMax(n) { n = n | 0; return Math.max(ROLL_MIN, Math.min(ROLL_MAX, n)); }
+function clampRollCount(k, maxN) { k = k | 0; return Math.max(1, Math.min(k, maxN | 0, ROLL_COUNT_MAX)); }
 // Faction glyphs by Null Signal Games (CC BY-ND 4.0). `mask: true` = black artwork, shown tinted.
 const FACTIONS = {
   corp: [
@@ -53,6 +87,7 @@ const MINOR = { corp: ['agenda', 'bad'], runner: ['agenda', 'tags', 'brain'] };
 // One-side modes can also show one of the opponent's counters (Menu toggles; the values live in the opponent's state).
 const OPP = { corp: { side: 'runner', key: 'tags', setting: 'oppTags' }, runner: { side: 'corp', key: 'bad', setting: 'oppBad' } };
 const oppShown = (side) => state.mode === side && !!settings[OPP[side].setting];
+const markShown = (side) => side === 'runner' && (state.mode === 'both' || state.mode === 'runner');
 
 // ---------------------------------------------------------------- state
 function newSide(side) {
@@ -62,7 +97,7 @@ function newSide(side) {
 }
 function newGame(mode) {
   const st = { mode, turn: 1, active: mode === 'runner' ? 'runner' : 'corp',
-    corp: newSide('corp'), runner: newSide('runner') };
+    corp: newSide('corp'), runner: newSide('runner'), mark: null };
   if (mode === 'both' || mode === 'corp') st.corp.clicks = BASE_CLICKS.corp;
   if (mode === 'runner') st.runner.clicks = BASE_CLICKS.runner;
   return st;
@@ -72,7 +107,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 let state = newGame('both');
 let undo = [];               // [{ s: previousState, label }]
-let settings = { showId: true, faceToFace: true, faceChosen: false, damage: 'core', faction: { corp: '', runner: '' }, oppTags: false, oppBad: false };
+let settings = { showId: true, faceToFace: true, faceChosen: false, damage: 'core', faction: { corp: '', runner: '' }, oppTags: false, oppBad: false, rollMax: 5, rollCount: 1 };
 let helpSeen = false;
 
 function validState(s) {
@@ -88,6 +123,7 @@ function migrate(st) {
     const fresh = newSide(side);
     for (const k of Object.keys(fresh)) if (typeof s[k] !== typeof fresh[k]) s[k] = fresh[k];
   }
+  if (!markOf(st.mark)) st.mark = null;
   return st;
 }
 let migrated = false;
@@ -111,6 +147,8 @@ function load() {
     settings.faction = Object.assign({ corp: '', runner: '' }, settings.faction || {});
     if (settings.damage !== 'brain') settings.damage = 'core';
     settings.oppTags = !!settings.oppTags; settings.oppBad = !!settings.oppBad;
+    settings.rollMax = clampRollMax(settings.rollMax == null ? 5 : settings.rollMax);
+    settings.rollCount = clampRollCount(settings.rollCount == null ? 1 : settings.rollCount, settings.rollMax);
     helpSeen = !!d.helpSeen;
     migrated = true; // write the upgraded save back once
   } catch (e) { /* corrupt save: start fresh */ }
@@ -147,6 +185,7 @@ function afterChange(prev) {
 function doUndo(flip = false) {
   const u = undo.pop();
   if (!u) { toast('Nothing to undo', '', 1700, flip); return; }
+  stopMarkAnim();
   state = u.s;
   save();
   render();
@@ -171,6 +210,7 @@ function endTurn(flip = false) {
       st[from].clicks = 0;
       st[to].clicks = BASE_CLICKS[to];
       st.corp.idUsed = false; st.runner.idUsed = false;
+      if (from === 'runner') st.mark = null;
       if (to === 'corp') st.turn = Math.min(999, st.turn + 1);
       st.active = to;
     });
@@ -180,6 +220,7 @@ function endTurn(flip = false) {
     commit(`End of turn ${state.turn}`, (st) => {
       st[side].clicks = BASE_CLICKS[side];
       st.corp.idUsed = false; st.runner.idUsed = false;
+      if (side === 'runner') st.mark = null;
       st.turn = Math.min(999, st.turn + 1);
     });
     toast(`Turn ${state.turn} · ${BASE_CLICKS[side]} clicks ready`);
@@ -343,7 +384,8 @@ function panel(side) {
       <div class="side-name" title="${factionOf(side) ? factionOf(side).name : ''}">${sideMark(side)}<span>${SIDE_NAME[side]}</span></div>
       <span class="live-dot" aria-hidden="true"></span>
       <span class="spacer"></span>
-      <button class="id-toggle" data-id="${side}" aria-pressed="false">${svg('i-id')}<span>ID ability</span><span class="id-state"></span></button>
+      ${markShown(side) ? `<button class="mark-btn" data-mark-btn="${side}" aria-label="Declare mark"></button>` : ''}
+      <button class="id-toggle" data-id="${side}" aria-pressed="false">${svg('i-id')}<span class="id-lbl">ID<span class="id-full"> ability</span></span><span class="id-state"></span></button>
     </div>
     <div class="hero">${tile(side, 'clicks')}${tile(side, 'credits')}</div>
     <div class="minor">${minor}</div>
@@ -351,7 +393,7 @@ function panel(side) {
 }
 
 function build() {
-  const key = `${state.mode}|${settings.faceToFace}|${settings.showId}|${settings.damage}|${JSON.stringify(settings.faction)}|${oppShown('corp')}|${oppShown('runner')}`;
+  const key = `${state.mode}|${settings.faceToFace}|${settings.showId}|${settings.damage}|${JSON.stringify(settings.faction)}|${oppShown('corp')}|${oppShown('runner')}|${markShown('runner')}`;
   if (key === builtKey) return false;
   builtKey = key;
   const sides = state.mode === 'both' ? ['corp', 'runner'] : [state.mode];
@@ -374,6 +416,7 @@ function build() {
       commit(`${SIDE_NAME[side]} ID ability ${state[side].idUsed ? 'ready again' : 'used'}`, (st) => { st[side].idUsed = !st[side].idUsed; });
     });
   });
+  board.querySelectorAll('[data-mark-btn]').forEach((b) => guardedClick(b, () => declareMark()));
   return true;
 }
 
@@ -390,6 +433,46 @@ function setNum(id, value) {
     el.classList.add(value > old ? 'bump-up' : 'bump-down');
   }
   shown[id] = value;
+}
+
+let markAnim = null; // { timers, btn }
+function markHtml(id) {
+  const m = markOf(id);
+  return m ? `${ico(m.ico)}<span>${m.name}</span>` : `${svg('i-dice')}<span>Mark</span>`;
+}
+function paintMark(btn, id = state.mark, revealing = !!(markAnim && !id)) {
+  if (!btn) return;
+  const m = markOf(id);
+  btn.classList.toggle('set', !!m && !revealing);
+  btn.classList.toggle('revealing', !!revealing);
+  btn.disabled = !!m || !!revealing;
+  btn.setAttribute('aria-label', m ? `Mark is ${m.name}` : 'Declare mark');
+  btn.innerHTML = revealing ? markHtml(id || 'hq') : markHtml(id);
+}
+function stopMarkAnim() {
+  if (!markAnim) return;
+  (markAnim.timers || []).forEach(clearTimeout);
+  markAnim = null;
+}
+/** Pick HQ, R&D or Archives uniformly, play a short reveal, then keep it until the Runner's turn ends. Undoable. */
+function declareMark() {
+  if (state.mark || markAnim) return;
+  const pick = pickMarkId();
+  const btns = [...board.querySelectorAll('[data-mark-btn]')];
+  stopMarkAnim();
+  const timers = [];
+  markAnim = { timers };
+  const order = [0, 1, 2, 0, 1, 2, 0, 1, 2];
+  order.forEach((i, step) => {
+    timers.push(setTimeout(() => {
+      btns.forEach((b) => paintMark(b, MARKS[i].id, true));
+    }, 70 * step));
+  });
+  timers.push(setTimeout(() => {
+    markAnim = null;
+    commit(`Runner mark: ${markOf(pick).name}`, (st) => { st.mark = pick; });
+    toast(`Mark is ${markOf(pick).name}`);
+  }, 70 * order.length + 80));
 }
 
 function render() {
@@ -426,6 +509,7 @@ function render() {
       const k = b.dataset.key, d = +b.dataset.d, v = state[b.dataset.side][k];
       b.classList.toggle('off', d < 0 ? v <= 0 : v >= LIMIT[k]);
     });
+    if (markShown(side) && !markAnim) paintMark(pn.querySelector('[data-mark-btn]'));
   }
   // top bar
   const tn = $('turnNum');
@@ -533,6 +617,8 @@ function helpBody(short = false) {
     <li><span class="hi">${ico('clicks')}</span><span><b>Clicks</b> show as click symbols. Bright ones are clicks you still have; spent ones are crossed out.</span></li>
     ${short ? '' : `<li><span class="hi r">${ico('damage')}</span><span>The Corp tracks <b>bad publicity</b>; the Runner tracks <b>tags</b> and <b>${dmgName().toLowerCase()}</b>. Rename it to ${settings.damage === 'brain' ? 'Core damage' : 'Brain damage'} in the Menu. Tracking one side? The Menu can also show the opponent's tags or bad publicity.</span></li>`}
     <li><span class="hi r">${svg('i-next')}</span><span><b>End turn</b> gives the next turn its clicks (Corp 3, Runner 4) and makes ID abilities ready again.</span></li>
+    ${short ? '' : `<li><span class="hi">${svg('i-dice')}</span><span>The <b>dice</b> button opens a roller: pick a number from 1 to N, or several different numbers (for example, 2 net damage from the grip). Rolls are not added to Undo.</span></li>`}
+    ${short ? '' : `<li><span class="hi r">${ico('hq')}</span><span>Tap <b>Mark</b> when an ability tells the Runner to identify their mark. It picks <b>HQ</b>, <b>R&amp;D</b> or <b>Archives</b> at random and stays until the Runner's turn ends. You can undo it.</span></li>`}
     <li><span class="hi">${svg('i-undo')}</span><span><b>Undo</b> steps back through your last ${UNDO_MAX} changes, even after closing the app.</span></li>
     <li><span class="hi">${svg('i-share')}</span><span>In Safari, tap <b>Share</b> then <b>Add to Home Screen</b> for a full-screen app that works offline.</span></li>
   </ul>`;
@@ -646,6 +732,111 @@ function openFaction(side) {
   }, { kind: 'faction' });
 }
 
+function rollCountLabel(k) {
+  return k === 1 ? 'Pick 1 number' : `Pick ${k} different cards`;
+}
+
+let rollTimer = 0, rollBusy = false;
+function stopRollAnim() { clearTimeout(rollTimer); rollBusy = false; }
+
+function openRoll(flip = false) {
+  stopRollAnim();
+  let last = null;
+  const maxEl = () => sheet.querySelector('[data-roll-max]');
+  const countEl = () => sheet.querySelector('[data-roll-count]');
+  const lblEl = () => sheet.querySelector('[data-roll-count-lbl]');
+  const resultEl = () => sheet.querySelector('[data-roll-result]');
+  const rollBtn = () => sheet.querySelector('[data-act="roll"]');
+  const paint = () => {
+    settings.rollMax = clampRollMax(settings.rollMax);
+    settings.rollCount = clampRollCount(settings.rollCount, settings.rollMax);
+    if (maxEl()) maxEl().textContent = settings.rollMax;
+    if (countEl()) countEl().textContent = settings.rollCount;
+    if (lblEl()) lblEl().textContent = rollCountLabel(settings.rollCount);
+    sheet.querySelectorAll('.preset').forEach((b) => b.classList.toggle('on', +b.dataset.n === settings.rollMax));
+    const minusMax = sheet.querySelector('[data-act="nmax"][data-d="-1"]');
+    const plusMax = sheet.querySelector('[data-act="nmax"][data-d="1"]');
+    const minusC = sheet.querySelector('[data-act="ncount"][data-d="-1"]');
+    const plusC = sheet.querySelector('[data-act="ncount"][data-d="1"]');
+    if (minusMax) minusMax.classList.toggle('off', settings.rollMax <= ROLL_MIN);
+    if (plusMax) plusMax.classList.toggle('off', settings.rollMax >= ROLL_MAX);
+    if (minusC) minusC.classList.toggle('off', settings.rollCount <= 1);
+    if (plusC) plusC.classList.toggle('off', settings.rollCount >= Math.min(settings.rollMax, ROLL_COUNT_MAX));
+    save();
+  };
+  const showResult = (vals, landing) => {
+    const box = resultEl();
+    if (!box) return;
+    const many = vals.length >= 3, lots = vals.length >= 5;
+    box.className = `roll-result${many ? ' many' : ''}${lots ? ' lots' : ''}`;
+    box.innerHTML = vals.map((n) => `<span class="roll-num${landing ? ' land' : ' spinning'}">${n}</span>`).join('');
+  };
+  const roll = () => {
+    if (rollBusy || !sheetOpen || sheet.dataset.kind !== 'roll') return;
+    const n = settings.rollMax, k = settings.rollCount;
+    const vals = pickDistinct(n, k);
+    last = vals;
+    rollBusy = true;
+    if (rollBtn()) rollBtn().disabled = true;
+    let frames = 0;
+    const tick = () => {
+      if (!sheetOpen || sheet.dataset.kind !== 'roll') { rollBusy = false; return; }
+      frames++;
+      // visual flicker only; the real result was already chosen
+      showResult(Array.from({ length: k }, () => 1 + randInt(n)), false);
+      if (frames < 8) { rollTimer = setTimeout(tick, 50); return; }
+      showResult(vals, true);
+      rollBusy = false;
+      const b = rollBtn();
+      if (b) { b.disabled = false; const lbl = b.querySelector('[data-roll-lbl]'); if (lbl) lbl.textContent = 'Roll again'; }
+    };
+    tick();
+  };
+  openSheet(`<h2>Roll</h2>
+    <p class="lead">A random number from 1 to N. Use it for net damage, a random card from HQ, or any other random pick.</p>
+    <div class="section-label">Upper number</div>
+    <div class="sheet-stepper roll-step">
+      <button class="step minus" data-act="nmax" data-d="-1" aria-label="Lower the upper number">${svg('i-minus')}</button>
+      <div class="v" data-roll-max>5</div>
+      <button class="step plus" data-act="nmax" data-d="1" aria-label="Raise the upper number">${svg('i-plus')}</button>
+    </div>
+    <div class="presets">${ROLL_PRESETS.map((n) => `<button class="preset" data-act="preset" data-n="${n}">${n}</button>`).join('')}</div>
+    <div class="section-label">How many</div>
+    <div class="sheet-stepper roll-step">
+      <button class="step minus" data-act="ncount" data-d="-1" aria-label="Fewer numbers">${svg('i-minus')}</button>
+      <div class="v" data-roll-count>1</div>
+      <button class="step plus" data-act="ncount" data-d="1" aria-label="More numbers">${svg('i-plus')}</button>
+    </div>
+    <div class="roll-count-lbl" data-roll-count-lbl>Pick 1 number</div>
+    <div class="roll-result" data-roll-result></div>
+    <div class="row"><button class="btn" data-act="close">Close</button>
+    <button class="btn primary" data-act="roll">${svg('i-dice')}<span data-roll-lbl>Roll</span></button></div>`, {
+    nmax: (el) => { settings.rollMax = clampRollMax(settings.rollMax + +el.dataset.d); paint(); },
+    ncount: (el) => { settings.rollCount = clampRollCount(settings.rollCount + +el.dataset.d, settings.rollMax); paint(); },
+    preset: (el) => { settings.rollMax = clampRollMax(+el.dataset.n); paint(); },
+    roll,
+    close: () => { stopRollAnim(); closeSheet(); },
+  }, { kind: 'roll', flip, onCancel: () => stopRollAnim() });
+  paint();
+}
+
+// Keep the app sized to the visible viewport (Safari toolbars, iPhone notch / home bar).
+function syncViewport() {
+  const vv = window.visualViewport;
+  const h = Math.round((vv && vv.height) || window.innerHeight);
+  const top = Math.round((vv && vv.offsetTop) || 0);
+  const root = document.documentElement;
+  root.style.setProperty('--app-h', h + 'px');
+  root.style.setProperty('--app-top', top + 'px');
+  root.style.setProperty('--vh', (h / 100) + 'px');
+}
+syncViewport();
+window.addEventListener('resize', syncViewport);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', syncViewport);
+  window.visualViewport.addEventListener('scroll', syncViewport);
+}
+
 // --------------------------------------------------------------- wiring
 guardedClick($('undoBtn'), () => doUndo(false));
 guardedClick($('corpUndoBtn'), () => doUndo(true));
@@ -660,6 +851,8 @@ guardedClick($('corpEndBtn'), () => {
 });
 guardedClick($('helpBtn'), () => openHelp(false));
 guardedClick($('menuBtn'), openMenu);
+guardedClick($('rollBtn'), () => openRoll(false));
+guardedClick($('corpRollBtn'), () => openRoll(true));
 
 load();
 if (migrated) save();
@@ -672,5 +865,11 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
 }
 
 // test hook (read-only snapshot)
-window.__nrt = { get state() { return clone(state); }, get undoCount() { return undo.length; }, VERSION };
+window.__nrt = {
+  get state() { return clone(state); },
+  get undoCount() { return undo.length; },
+  get settings() { return clone(settings); },
+  VERSION, randInt, pickDistinct, pickMarkId,
+  ROLL_MIN, ROLL_MAX, ROLL_COUNT_MAX,
+};
 })();

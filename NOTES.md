@@ -43,7 +43,8 @@ So the SVGs are copied unmodified and tinted at display time with CSS masks (`.i
 - Faction glyphs → optional "Corp faction" / "Runner faction" in the Menu (picker sheet; default None = plain built-in icon), shown next to
   the side name. Apex is black artwork → mask in Runner colour; the others keep their own colours.
 - Kept inline SVG: ID ability, plus/minus, undo, end turn, help, menu, new game, share, trophy, plain Corp/Runner marks.
-- Not used: 5 credits, advancement counters, Archives/HQ/R&D, interrupt, link, MU, rez cost, subroutine, trash, virus, generic counters
+- Used for the Runner's mark (v1.4): NSG_HQ_Icon, NSG_RD_Icon, NSG_Archives_Icon, tinted Runner colour.
+- Not used: 5 credits, advancement counters, interrupt, link, MU, rez cost, subroutine, trash, virus, generic counters
   (not tracked), set symbols (not relevant), NSG_CLICK_BLUE (fixed blue; we tint NSG_CLICK instead), NSG_BAD_PUBLICITY_SPENT (no spent state).
 
 ## Runner damage name (v1.2)
@@ -65,6 +66,11 @@ Menu → "Runner damage name": Core damage (default, newer name) / Brain damage.
   Menu toggle, and from then on their choice is kept, including through New game. Old saves don't record that, so a save with
   face-to-face on stays on (it was off by default, so the user turned it on), and one with it off switches on once.
 
+## v1.4 (Nov 11 2026)
+- **Random roller** (dice button in the top bar, and a second one in the face-to-face Corp bar so the Corp can open it facing them). A sheet sets the upper number N (2–50, large +/−, presets 3 / 5 / 6 / 8 / 10, remembered as `settings.rollMax`) and how many distinct results to pick (1–min(N,10), remembered as `settings.rollCount`, labelled "Pick 1 number" / "Pick 2 different cards"). Roll / Roll again shows a short animation, then the result. Uses `crypto.getRandomValues` with rejection sampling (unbiased). Rolls never touch game state or Undo.
+- **Runner's mark**: a Mark button on the Runner panel (both-sides and Runner-only). It picks HQ, R&D or Archives uniformly (crypto random), plays a short reveal, and shows a persistent chip with the NSG server icon tinted Runner colour. Saved as `state.mark`. Declaring it is undoable. It clears when the Runner's turn ends (both-sides: End Runner turn; Runner-only: End turn). Hidden in Corp-only — the Runner declares their mark, and that mode has no "end of the Runner's turn" to clear it.
+- Layout: the app is sized to the visible viewport (`100dvh` + `visualViewport` → `--app-h` / `--vh`). Tiles and numbers use `clamp` so they shrink on shorter phones (iPhone SE, Safari with toolbars). Tap targets stay at least 44pt. The board no longer scrolls; everything must fit.
+
 ## Tap-leak rule (the GBA bug, solved for touch)
 - Dialogs are bottom sheets over a full-screen backdrop that swallows pointer events; actions fire on `click`.
 - A counter only reacts to a press whose pointerdown started on that button while no dialog was open and outside the lockout.
@@ -76,11 +82,11 @@ Menu → "Runner damage name": Core damage (default, newer name) / Brain damage.
 ## Files
 `index.html` (markup + inline SVG icon sprite), `styles.css`, `app.js` (all logic), `sw.js` (offline cache), `manifest.webmanifest`,
 `icons/` (apple-touch-icon 180, 192, 512, maskable 512, favicon.svg; PNGs rendered from the SVG with headless Chrome),
-`tests/verify.py` (168 Playwright checks), `tests/shots.py` (screenshots into `screenshots/`).
+`tests/verify.py` (422 Playwright checks), `tests/shots.py` (screenshots into `screenshots/`).
 No build step, no dependencies, no external fonts (system font: SF Pro on iPhone).
 
 ## Saving
-localStorage key `nrtracker.v1`: `{v, state, undo:[{s,label}], settings:{showId, faceToFace, faceChosen, damage, faction:{corp, runner}, oppTags, oppBad}, helpSeen}`. Written after every change.
+localStorage key `nrtracker.v1`: `{v, state, undo:[{s,label}], settings:{showId, faceToFace, faceChosen, damage, faction:{corp, runner}, oppTags, oppBad, rollMax, rollCount}, helpSeen}`. Written after every change.
 Bad/corrupt data → fresh game + welcome. Note: iOS keeps home-screen web app storage separate from Safari tabs.
 
 ## PWA details

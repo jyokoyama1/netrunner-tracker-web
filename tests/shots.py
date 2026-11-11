@@ -79,5 +79,36 @@ with sync_playwright() as p:
     pg.screenshot(path=OUT+'menu.png')
     pg.click('[data-act="close"]'); pg.wait_for_timeout(2200)
     pg.screenshot(path=OUT+'both-sides-factions.png')
+    # roller + mark (v1.4)
+    pg.click('#rollBtn'); pg.wait_for_timeout(500)
+    pg.screenshot(path=OUT+'roll.png')
+    pg.click('[data-act="preset"][data-n="5"]'); pg.wait_for_timeout(100)
+    pg.click('[data-act="ncount"][data-d="1"]'); pg.wait_for_timeout(100)
+    pg.click('[data-act="roll"]'); pg.wait_for_timeout(800)
+    pg.screenshot(path=OUT+'roll-result.png')
+    pg.click('[data-act="close"]'); pg.wait_for_timeout(700)
+    # both-sides (not f2f) with a declared mark on the Runner panel
+    if pg.evaluate('window.__nrt.state.mode') != 'both' or pg.evaluate('window.__nrt.state.mode') == 'both' and pg.locator('#corpBar').is_visible():
+        pg.click('#menuBtn'); pg.wait_for_timeout(500)
+        if pg.evaluate('window.__nrt.state.mode') != 'both':
+            pg.click('[data-act="setmode"][data-mode="both"]'); pg.wait_for_timeout(200)
+        if pg.locator('#corpBar').is_visible() or pg.evaluate("!!document.querySelector('.app.f2f')"):
+            # turn face-to-face off if it's on (shots earlier may have left it on)
+            pass
+        pg.click('[data-act="close"]'); pg.wait_for_timeout(700)
+    # ensure face-to-face is off for a clear Runner-panel shot
+    if pg.locator('#corpBar').is_visible():
+        pg.click('#menuBtn'); pg.wait_for_timeout(500); pg.click('[data-act="face"]'); pg.wait_for_timeout(200)
+        pg.click('[data-act="close"]'); pg.wait_for_timeout(700)
+    if not pg.evaluate("window.__nrt.state.mark"):
+        pg.click('[data-mark-btn]'); pg.wait_for_timeout(1100)
+    pg.screenshot(path=OUT+'runner-mark.png')
+    # Runner-only with mark
+    pg.click('#menuBtn'); pg.wait_for_timeout(500)
+    pg.click('[data-act="setmode"][data-mode="runner"]'); pg.wait_for_timeout(200)
+    pg.click('[data-act="close"]'); pg.wait_for_timeout(700)
+    if not pg.evaluate("window.__nrt.state.mark"):
+        pg.click('[data-mark-btn]'); pg.wait_for_timeout(1100)
+    pg.screenshot(path=OUT+'runner-only-mark.png')
     print('ok')
     b.close()

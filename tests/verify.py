@@ -332,9 +332,10 @@ with sync_playwright() as p:
     # ---- NSG icons, faction marks, damage name
     pg.evaluate("localStorage.clear()"); pg.reload(); pg.wait_for_timeout(700); tap('[data-act="start"]'); rest()
     assets = pg.evaluate("""Promise.all(['NSG_CLICK.svg','NSG_CLICK_SPENT.svg','NSG_CREDIT.svg','NSG_AGENDA.svg','NSG_BAD_PUBLICITY.svg','NSG_TAG.svg','NSG_CORE_DAMAGE.svg',
+      'NSG_HQ_Icon.svg','NSG_RD_Icon.svg','NSG_Archives_Icon.svg',
       'factions/NSG_HB.png','factions/NSG_JINTEKI.png','factions/NSG_NBN.svg','factions/NSG_WEYLAND.svg','factions/NSG_ANARCH.svg','factions/NSG_CRIMINAL.svg','factions/NSG_SHAPER.svg','factions/NSG_ADAM.svg','factions/NSG_APEX.svg','factions/NSG_SUNNY.svg']
       .map(f=>fetch('assets/nsg/'+f).then(r=>r.ok)))""")
-    check('all 17 NSG assets are served', all(assets), assets)
+    check('all 20 NSG assets are served', all(assets), assets)
     masks = pg.evaluate("""['agenda','bad'].map(k=>getComputedStyle(document.querySelector('[data-tile="corp-'+k+'"] .ico')).webkitMaskImage||getComputedStyle(document.querySelector('[data-tile="corp-'+k+'"] .ico')).maskImage)""")
     check('counter labels use the NSG symbols as masks', all('assets/nsg/NSG_' in m for m in masks), masks)
     pm = pg.evaluate("""[...document.querySelectorAll('.panel.corp .pip i')].map(i=>{const s=getComputedStyle(i);return (s.webkitMaskImage||s.maskImage)})""")
@@ -470,6 +471,209 @@ with sync_playwright() as p:
     check('help opens from the ? button', pg.locator('#sheet[data-kind="help"]').count() == 1)
     tap('#sheet [data-act="close"]'); rest()
     check('help closes', not sheet_open(pg))
+
+    # ---- random roller
+    pg.evaluate("localStorage.clear()"); pg.reload(); pg.wait_for_timeout(700); tap('[data-act="start"]'); rest()
+    face_off()
+    before = S(pg); u0 = U(pg)
+    check('dice button is in the top bar', pg.locator('#rollBtn').is_visible())
+    tap('#rollBtn'); pg.wait_for_timeout(500)
+    check('dice opens the roll sheet', sheet_open(pg) and pg.locator('#sheet[data-kind="roll"]').count() == 1)
+    check('default upper number is 5, pick count is 1', pg.inner_text('[data-roll-max]').strip() == '5' and pg.inner_text('[data-roll-count]').strip() == '1'
+          and 'Pick 1 number' in pg.inner_text('#sheet'))
+    for _ in range(60):
+        tap('#sheet [data-act="nmax"][data-d="-1"]', 1, 20)
+    check('upper number cannot go below 2', pg.inner_text('[data-roll-max]').strip() == '2')
+    for _ in range(60):
+        tap('#sheet [data-act="nmax"][data-d="1"]', 1, 20)
+    check('upper number cannot go above 50', pg.inner_text('[data-roll-max]').strip() == '50')
+    tap('#sheet [data-act="preset"][data-n="6"]', 1, 80)
+    check('preset 6 sets the upper number', pg.inner_text('[data-roll-max]').strip() == '6' and 'on' in (pg.get_attribute('#sheet [data-act="preset"][data-n="6"]', 'class') or ''))
+    tap('#sheet [data-act="ncount"][data-d="1"]', 1, 80)
+    check('pick-count 2 uses the plain-word label', 'Pick 2 different cards' in pg.inner_text('#sheet') and pg.inner_text('[data-roll-count]').strip() == '2')
+    # can't pick more than N: set N to 3, try to raise count
+    tap('#sheet [data-act="preset"][data-n="3"]', 1, 80)
+    for _ in range(8):
+        tap('#sheet [data-act="ncount"][data-d="1"]', 1, 20)
+    check('cannot pick more numbers than N', pg.inner_text('[data-roll-max]').strip() == '3' and pg.inner_text('[data-roll-count]').strip() == '3')
+    tap('#sheet [data-act="preset"][data-n="5"]', 1, 80)
+    # back to pick 2 of 5
+    while pg.inner_text('[data-roll-count]').strip() != '2':
+        d = 1 if int(pg.inner_text('[data-roll-count]')) < 2 else -1
+        tap(f'#sheet [data-act="ncount"][data-d="{d}"]', 1, 40)
+        if int(pg.inner_text('[data-roll-count]')) == 2: break
+    tap('#sheet [data-act="roll"]'); pg.wait_for_timeout(700)
+    nums = pg.evaluate("""[...document.querySelectorAll('[data-roll-result] .roll-num')].map(e=>+e.textContent)""")
+    check('rolling 2 of 5 returns two distinct numbers from 1 to 5', len(nums) == 2 and len(set(nums)) == 2 and all(1 <= n <= 5 for n in nums), nums)
+    check('Roll does not change game state or undo', S(pg) == before and U(pg) == u0)
+    check('button says Roll again after the first roll', 'Roll again' in pg.inner_text('#sheet [data-act="roll"]'))
+    tap('#sheet [data-act="roll"]'); pg.wait_for_timeout(700)
+    nums2 = pg.evaluate("""[...document.querySelectorAll('[data-roll-result] .roll-num')].map(e=>+e.textContent)""")
+    check('Roll again also returns two valid distinct numbers', len(nums2) == 2 and len(set(nums2)) == 2 and all(1 <= n <= 5 for n in nums2), nums2)
+    tap('#sheet [data-act="close"]'); rest()
+    check('closing the roller leaves the game untouched', S(pg) == before and U(pg) == u0 and not sheet_open(pg))
+    pg.reload(); pg.wait_for_timeout(800)
+    tap('#rollBtn'); pg.wait_for_timeout(500)
+    check('roll range and pick-count survive reload', pg.inner_text('[data-roll-max]').strip() == '5' and pg.inner_text('[data-roll-count]').strip() == '2'
+          and pg.evaluate("JSON.parse(localStorage.getItem('nrtracker.v1')).settings.rollMax") == 5)
+    tap('#sheet [data-act="close"]'); rest()
+    # hook: unbiased-ish distribution and distinct picks
+    dist = pg.evaluate("""(() => { const c = [0,0,0,0,0,0]; for (let i = 0; i < 6000; i++) c[window.__nrt.randInt(6)]++; return c; })()""")
+    check('randInt(6) is uniform-ish over 6000 rolls (each face 800-1200)', all(800 <= n <= 1200 for n in dist), dist)
+    pairs = pg.evaluate("""(() => {
+      let dup = 0, bad = 0; const seen = {};
+      for (let i = 0; i < 600; i++) {
+        const a = window.__nrt.pickDistinct(5, 2);
+        if (new Set(a).size !== 2) dup++;
+        if (a.some((n) => n < 1 || n > 5)) bad++;
+        const k = [...a].sort((x,y)=>x-y).join(',');
+        seen[k] = (seen[k] || 0) + 1;
+      }
+      return {dup, bad, kinds: Object.keys(seen).length, seen};
+    })()""")
+    check('pickDistinct(5,2): no repeats, in range, all 10 pairs appear', pairs['dup'] == 0 and pairs['bad'] == 0 and pairs['kinds'] == 10, pairs)
+    hook = pg.evaluate("({min: window.__nrt.ROLL_MIN, max: window.__nrt.ROLL_MAX})")
+    check('published range is 2 to 50', hook == {'min': 2, 'max': 50}, hook)
+    # face-to-face: Corp dice opens the sheet facing the Corp
+    tap('#menuBtn'); pg.wait_for_timeout(500); tap('#sheet [data-act="face"]', 1, 300); tap('#sheet [data-act="close"]'); rest()
+    check('face-to-face: Corp bar has its own dice button', pg.locator('#corpRollBtn').is_visible() and f2f_on())
+    tap('#corpRollBtn'); pg.wait_for_timeout(500)
+    check('Corp dice opens the roll sheet upside down at the top', sheet_open(pg) and pg.evaluate("document.getElementById('overlay').classList.contains('flipped')")
+          and pg.locator('#sheet[data-kind="roll"]').count() == 1)
+    tap('#sheet [data-act="close"]'); rest()
+    face_off()
+
+    # ---- Runner's mark
+    check('both-sides: Mark button is on the Runner panel', pg.locator('.panel.runner [data-mark-btn]').count() == 1
+          and pg.locator('.panel.corp [data-mark-btn]').count() == 0 and 'Mark' in pg.inner_text('.panel.runner [data-mark-btn]'))
+    u0 = U(pg); before = S(pg)
+    tap('[data-mark-btn]'); pg.wait_for_timeout(1000)
+    st = S(pg)
+    check('declaring a mark picks HQ, R&D or Archives and is saved', st.get('mark') in ('hq', 'rd', 'archives') and U(pg) == u0 + 1, st)
+    m = st['mark']
+    names = {'hq': 'HQ', 'rd': 'R&D', 'archives': 'Archives'}
+    files = {'hq': 'NSG_HQ_Icon', 'rd': 'NSG_RD_Icon', 'archives': 'NSG_Archives_Icon'}
+    check('mark chip shows the server name', names[m] in pg.inner_text('[data-mark-btn]'), pg.inner_text('[data-mark-btn]'))
+    col = pg.evaluate("getComputedStyle(document.querySelector('[data-mark-btn] .ico')).backgroundColor")
+    mask = pg.evaluate("getComputedStyle(document.querySelector('[data-mark-btn] .ico')).webkitMaskImage")
+    check('mark chip uses the NSG server icon in the Runner colour', col == 'rgb(255, 61, 120)' and files[m] in mask, (col, mask))
+    check('declaring a mark does not change counters', st['corp']['credits'] == before['corp']['credits'] and st['runner']['clicks'] == before['runner']['clicks'])
+    # second tap does nothing
+    tap('[data-mark-btn]'); pg.wait_for_timeout(400)
+    check('a second tap does not re-roll the mark', S(pg)['mark'] == m and U(pg) == u0 + 1)
+    pg.reload(); pg.wait_for_timeout(800)
+    check('mark survives reload', S(pg)['mark'] == m and names[m] in pg.inner_text('[data-mark-btn]'))
+    tap('#undoBtn'); pg.wait_for_timeout(200)
+    check('undo clears the mark and names it', S(pg).get('mark') in (None, '') and 'Mark' in pg.inner_text('[data-mark-btn]')
+          and 'mark' in pg.inner_text('#toast').lower(), (S(pg).get('mark'), pg.inner_text('#toast')))
+    pg.wait_for_timeout(300)
+    # declare, end Corp turn (must not clear), then end Runner turn (clears)
+    tap('[data-mark-btn]'); pg.wait_for_timeout(1000)
+    declared = S(pg)['mark']
+    check('(setup) mark declared on the Corp turn', declared in ('hq', 'rd', 'archives'))
+    tap('#endBtn'); pg.wait_for_timeout(500); tap('#sheet [data-act="confirm"]'); rest()
+    check('ending the Corp turn leaves the mark in place', S(pg)['mark'] == declared and S(pg)['active'] == 'runner')
+    tap('#endBtn'); pg.wait_for_timeout(500); tap('#sheet [data-act="confirm"]'); rest()
+    check('ending the Runner turn clears the mark', S(pg).get('mark') in (None, '') and S(pg)['active'] == 'corp')
+    tap('#undoBtn'); pg.wait_for_timeout(200)
+    check('undoing End Runner turn restores the mark', S(pg)['mark'] == declared and S(pg)['active'] == 'runner')
+    pg.wait_for_timeout(300)
+    # distribution of mark picks
+    md = pg.evaluate("""(() => { const c = {hq:0, rd:0, archives:0}; for (let i = 0; i < 3000; i++) c[window.__nrt.pickMarkId()]++; return c; })()""")
+    check('mark pick is uniform-ish over 3000 rolls (each server 700-1300)', all(700 <= md[k] <= 1300 for k in ('hq', 'rd', 'archives')), md)
+    # Runner-only: button shown, End turn clears; Corp-only: hidden
+    tap('#menuBtn'); pg.wait_for_timeout(500); tap('#sheet [data-act="setmode"][data-mode="runner"]', 1, 300); tap('#sheet [data-act="close"]'); rest()
+    check('Runner-only shows the Mark button', pg.locator('.panel.runner [data-mark-btn]').count() == 1)
+    # may still have a mark from before the mode switch
+    if S(pg).get('mark') in (None, ''):
+        tap('[data-mark-btn]'); pg.wait_for_timeout(1000)
+    check('Runner-only can have a declared mark', S(pg).get('mark') in ('hq', 'rd', 'archives'))
+    tap('#endBtn'); pg.wait_for_timeout(500); tap('#sheet [data-act="confirm"]'); rest()
+    check('Runner-only End turn clears the mark', S(pg).get('mark') in (None, ''))
+    tap('#menuBtn'); pg.wait_for_timeout(500); tap('#sheet [data-act="setmode"][data-mode="corp"]', 1, 300); tap('#sheet [data-act="close"]'); rest()
+    check('Corp-only hides the Mark button', pg.locator('[data-mark-btn]').count() == 0)
+    tap('#menuBtn'); pg.wait_for_timeout(500); tap('#sheet [data-act="newgame"]'); pg.wait_for_timeout(400)
+    tap('#sheet .choice[data-mode="both"]', 1, 100); tap('#sheet [data-act="confirm"]'); rest()
+    check('new game starts with no mark', S(pg).get('mark') in (None, ''))
+    tap('#helpBtn'); pg.wait_for_timeout(500)
+    ht = pg.inner_text('#sheet')
+    check('help mentions the roller and the mark', 'dice' in ht.lower() and 'Mark' in ht and 'HQ' in ht and 'Archives' in ht, ht[:400])
+    tap('#sheet [data-act="close"]'); rest()
+
+    # ---- no page scroll on real iPhone-sized viewports (home-screen safe areas included)
+    def load_combo(mode, extra):
+        settings = dict(showId=True, faceToFace=False, faceChosen=True, damage='core',
+                        faction={'corp': '', 'runner': ''}, oppTags=False, oppBad=False, rollMax=5, rollCount=1)
+        settings.update({k: v for k, v in extra.items() if k != 'mark'})
+        stt = {'mode': mode, 'turn': 1, 'active': 'runner' if mode == 'runner' else 'corp',
+               'corp': {'clicks': 3, 'credits': 5, 'agenda': 0, 'idUsed': False, 'bad': 0},
+               'runner': {'clicks': 4, 'credits': 5, 'agenda': 0, 'idUsed': False, 'tags': 0, 'brain': 0},
+               'mark': extra.get('mark')}
+        payload = {'v': 1, 'state': stt, 'undo': [], 'settings': settings, 'helpSeen': True}
+        pg.evaluate("localStorage.setItem('nrtracker.v1', JSON.stringify(" + json.dumps(payload) + "))")
+
+    combos = [
+        ('both sides', 'both', {}),
+        ('both sides face-to-face', 'both', {'faceToFace': True}),
+        ('both sides with mark', 'both', {'mark': 'hq'}),
+        ('both sides face-to-face with mark', 'both', {'faceToFace': True, 'mark': 'archives'}),
+        ('Corp only', 'corp', {}),
+        ('Corp only + Runner tags', 'corp', {'oppTags': True}),
+        ('Runner only', 'runner', {}),
+        ('Runner only + Corp bad publicity', 'runner', {'oppBad': True}),
+        ('Runner only + mark + bad publicity', 'runner', {'oppBad': True, 'mark': 'rd'}),
+    ]
+    viewports = [
+        (390, 844, 0, 0, '390x844'),
+        (390, 844, 47, 34, '390x844 safe 47/34 (home-screen)'),
+        (375, 667, 0, 0, '375x667 SE'),
+        (375, 667, 47, 34, '375x667 SE with safe areas'),
+        (430, 932, 0, 0, '430x932'),
+        (430, 932, 59, 34, '430x932 safe 59/34 (home-screen)'),
+    ]
+    for w, h, st, sb, vname in viewports:
+        pg.set_viewport_size({'width': w, 'height': h})
+        for cname, mode, extra in combos:
+            load_combo(mode, extra)
+            pg.reload(); pg.wait_for_timeout(500)
+            pg.evaluate(f"document.documentElement.style.setProperty('--safe-t','{st}px');document.documentElement.style.setProperty('--safe-b','{sb}px')")
+            pg.wait_for_timeout(80)
+            info = pg.evaluate("""(() => {
+              const el = document.documentElement, app = document.getElementById('app'), b = document.getElementById('board');
+              const vv = window.visualViewport;
+              const hit = (x) => {
+                const r = x.getBoundingClientRect();
+                let w = r.width, h = r.height;
+                const s = getComputedStyle(x, '::after');
+                if (s && s.content && s.content !== 'none' && s.position === 'absolute') {
+                  w -= (parseFloat(s.left) || 0) + (parseFloat(s.right) || 0);
+                  h -= (parseFloat(s.top) || 0) + (parseFloat(s.bottom) || 0);
+                }
+                return Math.min(w, h);
+              };
+              const btns = [...document.querySelectorAll('.step, .icon-btn, .undo-btn, .end-btn, .mark-btn, .id-toggle')].filter((x) => x.offsetParent);
+              const sizes = btns.map(hit);
+              return {
+                scrollHeight: el.scrollHeight, clientHeight: el.clientHeight,
+                innerHeight: window.innerHeight, vv: vv ? vv.height : null,
+                app: [app.scrollHeight, app.clientHeight], board: [b.scrollHeight, b.clientHeight],
+                minBtn: sizes.length ? Math.min(...sizes) : 99,
+                clipped: [...document.querySelectorAll('.id-toggle, [data-mark-btn]')].filter((el) => {
+                  if (!el.offsetParent) return false;
+                  const p = el.closest('.panel').getBoundingClientRect(), r = el.getBoundingClientRect();
+                  return r.right > p.right + 1 || r.left < p.left - 1 || r.top < p.top - 1;
+                }).map((el) => el.className),
+              };
+            })()""")
+            label = f'{cname} @ {vname}'
+            view_h = info['vv'] or info['innerHeight'] or h
+            check(f'{label}: document scrollHeight <= viewport', info['scrollHeight'] <= max(info['clientHeight'], view_h, h) + 1, info)
+            check(f'{label}: board fits without scrolling', info['board'][0] <= info['board'][1] + 1, info)
+            check(f'{label}: tap targets at least 44pt', info['minBtn'] >= 44, info)
+            check(f'{label}: mark and ID stay inside the panel', not info['clipped'], info['clipped'])
+    pg.set_viewport_size({'width': 390, 'height': 844})
+    pg.evaluate("document.documentElement.style.removeProperty('--safe-t');document.documentElement.style.removeProperty('--safe-b')")
+    pg.wait_for_timeout(100)
 
     # ---- PWA
     man = pg.evaluate("fetch('manifest.webmanifest').then(r=>r.json())")
